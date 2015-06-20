@@ -1,0 +1,604 @@
+#!/usr/bin/env python
+#
+#  xsysroot
+#
+#  A small tool that gives sysroot access to multiple ARM Linux images on a i686 host
+#
+#  The MIT License (MIT)
+#
+#  Copyright (c) 2015 Albert Casals - albert@mitako.eu
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy
+#  of this software and associated documentation files (the "Software"), to deal
+#  in the Software without restriction, including without limitation the rights
+#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#  copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in
+#  all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+#  THE SOFTWARE.
+
+__version__ = 1.3
+
+import os
+import sys
+import subprocess
+import json
+
+from optparse import OptionParser
+
+default_settings='''
+{
+
+  "default" : {
+     "description": "pipaOS 3.5 Wheezy",
+     "nbdev" : "/dev/nbd5",
+     "nbdev_part" : "p2",
+     "sysroot" : "/tmp/pipaos",
+     "tmp" : "/tmp/pipaos-tmp",
+     "backing_image": "~/pipaos-3.5-wheezy-xgui.img.gz",
+     "qcow_image": "~/pipaos-3.5-wheezy-xgui.qcow",
+     "qcow_size": "4G"
+  }
+}
+'''
+
+class XSysroot():
+    '''
+    A class which encapsulates a mount based access to a ARM sysroot image
+    '''
+    def __init__(self, profile=None, verbose=True):
+        self.verbose=verbose
+        self.settings_filename='xsysroot.conf'
+        self.last_profile_cache=os.path.join(os.path.expanduser('~'), '.xsysroot')
+
+        # choose a settings profile, or set to last used
+        if not profile:
+            self.profile=self._get_active_profile()
+        else:
+            self.profile=profile
+
+        self._load_settings()
+
+    def _get_settings_filename(self):
+        '''
+        Finds the system-wide or private user configuration file
+        '''
+        settings_system=os.path.join(os.path.expanduser('/etc'), self.settings_filename)
+        settings_user=os.path.join(os.path.expanduser('~'), self.settings_filename)
+        if os.path.isfile(settings_system):
+            return settings_system
+        if os.path.isfile(settings_user):
+            return settings_user
+        return None
+
+    def _get_active_profile(self):
+        '''
+        Returns the profile name you are currently using
+        '''
+        try:
+            with open(self.last_profile_cache, 'r') as f:
+                profile,value=f.read().split(':')
+                if profile=='last_profile':
+                    return value.strip()
+        except:
+            return 'default'
+
+    def _set_active_profile(self, profilename):
+        '''
+        Keeps track of the profile you are currently working on
+        '''
+        with open(self.last_profile_cache, 'w') as f:
+            f.write('last_profile: {}\n'.format(profilename))
+
+    def _load_settings(self):
+        '''
+        Loads your configuration file from /etc, your home directory, or embedded in the xsysroot module
+        '''
+        self.settings=None
+        try:
+            filename=self._get_settings_filename()
+            if filename:
+                with open(filename, 'r') as f:
+                    self.settings=json.load(f)[self.profile]
+            else:
+                filename=__file__
+                self.profile='default'
+                self.settings=json.loads(default_settings)[self.profile]
+        except:
+            # FIXME: when no self.profile found it does raise exception
+            print 'could not load settings - please check Json syntax ({})'.format(filename)
+            raise
+
+        self._set_active_profile(self.profile)
+
+        # Expand shell macros, this allows to embed things like (date +%d) and ~ homedir.
+        self.settings['sysroot'] = os.popen(
+            'echo {}'.format(self.settings['sysroot'])).read().strip('\n')
+        self.settings['tmp'] = os.popen(
+            'echo {}'.format(self.settings['tmp'])).read().strip('\n')
+        self.settings['backing_image'] = os.popen(
+            'echo {}'.format(self.settings['backing_image'])).read().strip('\n')
+        self.settings['qcow_image'] = os.popen(
+            'echo {}'.format(self.settings['qcow_image'])).read().strip('\n')
+
+    def _uncompress_backing_image(self):
+        '''
+        Uncompress the backing image if necessary, returns the raw image filename
+        '''
+        if not os.path.isfile(self.settings['backing_image']):
+            return None
+
+        file_pathname, extension=os.path.splitext(self.settings['backing_image'])
+        if extension in ('.gz', '.zip', '.xz'):
+            uncompressed=self.settings['qcow_image'].replace('.qcow', '.img')
+            if os.path.isfile(uncompressed):
+                print 'Removing uncompressed backing image {}'.format(uncompressed)
+                rc=self._run_cmd('rm {}'.format(uncompressed))
+
+            if extension=='.gz':
+                uncompress='gunzip -c'
+            elif extension=='.zip':
+                uncompress='unzip -p'
+            elif extension=='xz':
+                uncompress='xz --decompress --stdout'
+            else:
+                return None
+
+            # Uncompress again to get the latest version of the backing image
+            print 'Uncompressing image {} into {}'.format(self.settings['backing_image'], uncompressed)
+            p=self._run_cmd('{} {} > {}'.format(uncompress, self.settings['backing_image'], uncompressed))
+        elif extension in ('.img'):
+            # backing file is in raw format, no need to uncompress
+            uncompressed=self.settings['backing_image']
+        else:
+            return None
+
+        return uncompressed
+
+    def _prepare_sysroot(self):
+        if not self.is_mounted():
+            print 'sysroot not mounted, please mount first with -m'
+            return False
+        else:
+            # Copy ARM emulator, setup a default DNS, and remove libcofi.so preload
+            print 'Preparing sysroot for chroot to function correctly'
+            self._run_cmd('sudo cp $(which qemu-arm-static) ' \
+                              '{sysroot}/usr/bin'.format(**self.settings))
+            self._run_cmd('sudo rm -fv {sysroot}/etc/resolv.conf'.format(**self.settings))
+            self._run_cmd('echo "nameserver 8.8.8.8" | sudo tee {sysroot}/etc/resolv.conf'.format(**self.settings))
+            self._run_cmd('sudo sed -e "/.*libcofi.*/ s/^#*/#/" -i {sysroot}/etc/ld.so.preload'.format(**self.settings))
+            print 'Preparation done'
+            return True
+
+    def _run_cmd(self, command):
+        '''
+        Runs a command on the host system
+        '''
+        rc=os.system(command)
+        return rc
+
+    def _xrun_cmd(self, command=''):
+        '''
+        Runs a command inside the sysroot
+        '''
+        return self._run_cmd('sudo LC_ALL=C chroot {} {}'.format(self.settings['sysroot'], command))
+
+    def list_profiles(self):
+        '''
+        Lists all profiles defined in your configuration file
+        '''
+        print 'Active profile: {} ({})'.format(self.profile, self.settings['description'])
+        try:
+            print 'Available profiles:'
+            filename=self._get_settings_filename()
+            if filename:
+                with open(filename, 'r') as f:
+                    settings=json.load(f)
+                    for profile in settings:
+                        mounted=''
+                        if self.is_mounted(settings=settings[profile]):
+                            mounted = 'sysroot is mounted'
+
+                        print ' {} ({}) {}'.format(profile, settings[profile]['description'], mounted)
+            else:
+                print 'could not find settings file: {}'.format(self.settings_filename)
+        except:
+            print 'could not load settings - please check Json syntax'
+            raise
+
+    def print_settings(self):
+        '''
+        Prints all variables defined in the current profile
+        '''
+        for k,v in self.settings.items():
+            print '{:<25}: {}'.format(k,v)
+
+    def print_is_mounted(self):
+        '''
+        Displays a message to say if the sysroot is mounted
+        '''
+        ismounted=self.is_mounted()
+        print 'sysroot mounted?', ismounted
+        return ismounted
+
+    def is_mounted(self, settings=None):
+        '''
+        Returns True if the current profile sysroot is mounted
+        '''
+        if not settings:
+            settings=self.settings
+        rc=self._run_cmd('mountpoint {sysroot} > /dev/null 2>&1'.format(**settings))
+        return (rc == 0)
+
+    def status(self):
+        '''
+        Displays current profile status and variable information
+        '''
+        print 'Active profile: {} ({})'.format(self.profile, self.settings['description'])
+        self.print_is_mounted()
+        self.print_settings()
+
+    def query(self, variable):
+        '''
+        Queries a variable from your current profile configuration
+        Useful for automated scripts - i.e. cat $(xsysroot -q tmp)
+        '''
+        print self.settings[variable]
+        
+    def mount(self):
+        '''
+        Mounts the sysroot image to get ready for use
+        '''
+        if self.is_mounted():
+            print 'sysroot already mounted'
+            return False
+        elif not os.path.isfile(self.settings['qcow_image']):
+                print 'Qcow image not found {qcow_image} - please run "renew"'.format(**self.settings)
+                return False
+        else:
+            print 'Mounting qcow image:', self.settings['qcow_image']
+            p=self._run_cmd('mkdir -p {}'.format(self.settings['sysroot']))
+            p=self._run_cmd('mkdir -p {}'.format(self.settings['tmp']))
+
+            p=self._run_cmd('sudo qemu-nbd -c {nbdev} {qcow_image}; sync'.format(**self.settings))
+            p=self._run_cmd('sudo mount {nbdev}{nbdev_part} {sysroot}'.format(**self.settings))
+
+            p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
+            p=self._run_cmd('sudo mount --bind {tmp} {sysroot}/tmp'.format(**self.settings))
+            print 'Mount done'
+            return True
+
+    def umount(self):
+        '''
+        Unmounts the sysroot image and releases associated resources
+        '''
+        if not self.is_mounted():
+            print 'sysroot is already unmounted'
+            return False
+        else:
+            # sanity check
+            rc=self._run_cmd('sudo lsof {sysroot}'.format(**self.settings))
+            if rc == 0:
+                print 'ERROR - there seem to be processes working on this sysroot, umount aborted'
+                return False
+
+            print 'unmounting {qcow_image}'.format(**self.settings)
+            p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
+            p=self._run_cmd('sudo qemu-nbd -d {nbdev}'.format(**self.settings))
+            p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
+            print 'Unmount done'
+            return True
+
+    def renew(self):
+        '''
+        Recreates the sysroot from scratch unfolding the original backing image
+        '''
+        if self.is_mounted():
+            print 'sysroot is mounted, please unmount first'
+            return False
+
+        if os.path.isfile('{qcow_image}'.format(**self.settings)):
+            print 'Removing qcow image {qcow_image}'.format(**self.settings)
+            rc=self._run_cmd('rm {qcow_image}'.format(**self.settings))
+
+        # Get the original backing image, which means uncompress it if necessary
+        uncompressed=self._uncompress_backing_image()
+        if not uncompressed:
+            print 'Backing image not found or unsupported format: {}'.format(self.settings['backing_image'])
+            return False
+
+        print 'Creating qcow image {qcow_image} of dynamic size {qcow_size}'.format(**self.settings)
+        p=self._run_cmd('qemu-img create -f qcow2 -b ' \
+                            '{} {} {}'.format(uncompressed, self.settings['qcow_image'], self.settings['qcow_size']))
+
+        self.mount()
+
+        # Prepare image settings to chroot and access network
+        self._prepare_sysroot()
+        print 'Renew done'
+
+    def execute(self, command):
+        '''
+        Executes a command inside the sysroot
+        '''
+        if not self.is_mounted():
+            print 'sysroot not mounted - aborting'
+            return False
+        else:
+            print 'sysroot executing: {}'.format(command)
+            self._xrun_cmd(command)
+
+    def chroot(self):
+        '''
+        Starts an interactive shell into the ARM sysroot
+        '''
+        if not self.is_mounted():
+            print 'sysroot not mounted - please mount first with -m'
+            return False
+        else:
+            print 'Starting ARM sysroot shell into: {sysroot}'.format(**self.settings)
+            self._xrun_cmd()
+
+    def depends(self, repo_dir='.'):
+        '''
+        Parses a Debian package control file, and install build-depends in the sysroot
+        '''
+        success=False
+        control_file=os.path.join(repo_dir, 'debian/control')
+        if not self.is_mounted():
+            print 'sysroot not mounted - aborting'
+        else:
+            pkgs_install=''
+            print 'Checking Build-Dependencies at {}'.format(control_file)
+            output = subprocess.Popen(['dpkg-checkbuilddeps', control_file], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            rc=output.wait()
+            if rc == 1:
+                # Dependencies need to be installed:
+                # Parsing the output of dpkg-checkbuilddeps
+                for item in output.stderr.read().split()[4:]:
+                    if item.find('(') == -1 and item.find(')') == -1:
+                        pkgs_install += '{} '.format(item)
+                        
+                print 'Installing packages in the sysroot:', pkgs_install
+                rc=self._xrun_cmd('apt-get --no-install-recommends -y install {}'.format(pkgs_install))
+
+                print 'apt-get completed with rc={}'.format(rc)
+                success=(rc==0)
+            elif rc == 2:
+                print 'dpkg-checkbuilddeps returned with rc={} - no debian control file found'.format(rc)
+            else:
+                print 'dpkg-checkbuilddeps failed with unknown rc={}'.format(rc)
+                
+        return success
+
+    def build(self, repo_dir='.', debuild_cmd='echo "y" | debuild --preserve-envvar PATH -us -uc -d -aarmhf'):
+        debian_dir=os.path.abspath(os.path.join(repo_dir, 'debian'))
+        pkg_dir=os.path.abspath(repo_dir + '/../')
+        if not os.path.exists(debian_dir):
+            print 'cannot find debian package directory at: {}'.format(debian_dir)
+            return False
+
+        # Resolve build dependencies
+        self.depends(repo_dir=repo_dir)
+
+        print 'building package for repo', repo_dir
+        rc=os.system('cd {} && {}'.format(repo_dir, debuild_cmd))
+        if rc:
+            print 'ERROR - failure building package for repo {}'.format(repo_dir)
+            return False
+        else:
+            print 'OK - Debian package built successfuly'
+            return True
+
+
+
+def check_system_tools():
+    '''
+    Checks wether you have the necessary tools to fully utilize xsysroot
+    Returns True if you can rock & roll, False otherwise
+    '''
+    ready=False
+
+    # check if the NBD kernel modules is loaded
+    rc=os.system('lsmod | grep nbd > /dev/null 2>&1')
+    if (rc):
+        print 'The NBD kernel module is not loaded - please fix /etc/modules'
+
+    # check for password-less sudo
+    rc = os.system('sudo -n -k whoami > /dev/null 2>&1')
+    if rc:
+        print 'Error: You do not seem to have sudo password-less permissions, please run visudo to fix'
+
+    # check for qemu tools
+    rc = os.system('which qemu-arm-static qemu-img qemu-nbd  > /dev/null 2>&1')
+    if rc:
+        print 'Error: please install qemu-user-static and qemu-utils packages'
+    
+    # check for bin format support
+    rc = os.system('sudo which update-binfmts  > /dev/null 2>&1')
+    if rc:
+        print 'Error: please install binfmt-support package'
+
+    # The debian packge build-depends tool
+    rc = os.system('which dpkg-checkbuilddeps > /dev/null 2>&1')
+    if rc:
+        print 'Warning: dpkg-checkbuilddeps cannot be found, --depends will not work'
+
+    # The debian packge build-depends tool
+    rc = os.system('which dpkg-checkbuilddeps > /dev/null 2>&1')
+    if rc:
+        print 'Warning: debuild not found, please install devscripts package if you want to --build'
+
+    return True
+
+
+
+def create_debian_skeleton(prj_directory):
+    '''
+    Creates an empty Debian skeleton folder to generate a package with "debuild"
+    '''
+
+    changelog='''xsysroot (1.0-1) unstable; urgency=low
+
+  * xsysroot initial version
+
+ -- Albert Casals <albert@mitako.eu>  Fri, 20 Jun 2015 00:00:00 +0100
+'''
+
+    control='''Source: xsysroot
+Maintainer: Albert Casals <albert@mitako.eu>
+Section: shells
+Priority: optional
+Standards-Version: 3.9.4
+Build-Depends: debhelper (>=9.0.0)
+
+Package: xsysroot
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: A small tool that gives sysroot access to multiple ARM Linux images on a i686 host
+
+'''
+
+    rules='''
+#!/usr/bin/make -f
+
+%:
+\tdh $@
+'''
+
+    if not os.path.exists(prj_directory):
+        print 'error - cannot access directory: {}'.format(prj_directory)
+        return False
+
+    debian_directory=os.path.join(prj_directory, 'debian')
+    if os.path.exists(debian_directory):
+        print 'error - debian directory already exists: {}'.format(debian_directory)
+        return False
+
+    rc=os.system('mkdir -p {}'.format(debian_directory))
+    if rc:
+        print 'error - could not create directory: {}'.format(debian_directory)
+
+    with open(os.path.join(debian_directory, 'changelog'), 'w') as f:
+        f.writelines(changelog)
+
+    rc=os.system('echo "9" > {}'.format(os.path.join(debian_directory, 'compat')))
+    rc=os.system('echo "./xsysroot /usr/bin" > {}'.format(os.path.join(debian_directory, 'files')))
+
+    with open(os.path.join(debian_directory, 'control'), 'w') as f:
+        f.writelines(control)
+
+    with open(os.path.join(debian_directory, 'rules'), 'w') as f:
+        f.writelines(rules)
+
+    print 'Debian skeleton package created at: {}'.format(debian_directory)
+    return True
+    
+
+
+if __name__ == '__main__':
+
+    parser = OptionParser()
+
+    parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
+                      help="print more progress information")
+
+    parser.add_option("-t", "--tools", action="store_true", dest="tools", default=False,
+                      help="performs a basic test to see if system tools are ready")
+
+    parser.add_option("-p", "--profile", dest="profile", metavar="PROFILE", default=None,
+                      help="switch to a different sysroot profile")
+
+    parser.add_option("-l", "--list", action="store_true", dest="list",
+                      help="list all available sysroot profiles")
+
+    parser.add_option("-s", "--status", dest="status", action="store_true",
+                      help='display settings and mount status')
+
+    parser.add_option("-q", "--query", dest="query", metavar="VAR",
+                      help='query a profile variable name')
+
+    parser.add_option("-i", "--is-mounted", dest="ismounted", action="store_true",
+                      help='returns wether sysroot is mounted')
+
+    parser.add_option("-r", "--renew", dest="renew", action="store_true",
+                      help='rebuilds sysroot from scratch - QCOW DATA WILL BE LOST')
+
+    parser.add_option("-m", "--mount", dest="mount", action="store_true",
+                      help='mount the current qcow image')
+
+    parser.add_option("-u", "--umount", dest="umount", action="store_true",
+                      help='unmount the current qcow image')
+
+    parser.add_option("-c", "--chroot", dest="chroot", action="store_true",
+                      help='jumps you to an interactive ARM shell on the current sysroot')
+
+    parser.add_option("-x", "--execute", dest="execute", metavar="CMD",
+                      help='executes a command in the sysroot')
+
+    parser.add_option("-d", "--depends", dest="depends", action="store_true",
+                      help='installs Debian "Build-Depends" on the sysroot')
+
+    parser.add_option("-b", "--build", dest="build", action="store_true",
+                      help='performs a Debian "debuild" on the host (cross build a package)')
+
+    parser.add_option("-k", "--skeleton", dest="skeleton", metavar="DIRECTORY", default=None,
+                      help='gives you a Debian package control directory skeleton')
+
+    (options, args) = parser.parse_args()
+
+    # instantiate the class that does the big job
+    xsys=XSysroot(profile=options.profile, verbose=options.verbose)
+
+    # if -l, list profiles and quit
+    if options.list:
+        xsys.list_profiles()
+        sys.exit(0)
+
+    # do the task requested
+    if options.status:
+        xsys.status()
+    elif options.query:
+        xsys.query(options.query)
+    elif options.ismounted:
+        is_mounted=xsys.print_is_mounted()
+        sys.exit(is_mounted == True)
+    elif options.renew:
+        xsys.renew()
+    elif options.mount:
+        xsys.mount()
+    elif options.umount:
+        xsys.umount()
+    elif options.chroot:
+        xsys.chroot()
+    elif options.execute:
+        xsys.execute(options.execute)
+    elif options.depends:
+        xsys.depends()
+    elif options.build:
+        xsys.build()
+    elif options.skeleton:
+        create_debian_skeleton(options.skeleton)
+    elif options.tools:
+        if not check_system_tools():
+            print 'You seem to be missing basic tools to run xsysroot'
+            sys.exit(1)
+        else:
+            print 'Core system tools seem to be ready, xsysroot should work fine'
+            sys.exit(0)
+    else:
+        print 'please tell me what to do, -h to see available commands'
+        sys.exit(1)
+        
+    sys.exit(0)
