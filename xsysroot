@@ -32,6 +32,7 @@ import os
 import sys
 import subprocess
 import json
+import re
 
 from optparse import OptionParser
 
@@ -98,6 +99,21 @@ class XSysroot():
         '''
         with open(self.last_profile_cache, 'w') as f:
             f.write('last_profile: {}\n'.format(profilename))
+
+    def _get_virtual_display(self):
+        '''
+        Returns a display number and Window Manager to allocate a virtual display.
+        '''
+        try:
+            # Name of the window manager to use (e.g. fluxbox)
+            win_manager = self.settings['display']
+
+            # The display number will be bound to the same NBDEV device number
+            display_number = re.search('(\d+)', self.settings['nbdev']).group()
+
+            return display_number, win_manager
+        except:
+            return None, None
 
     def _load_settings(self):
         '''
@@ -183,14 +199,19 @@ class XSysroot():
         '''
         Runs a command on the host system
         '''
-        rc=os.system(command)
-        return rc
+        return os.system(command)
 
-    def _xrun_cmd(self, command=''):
+    def _xrun_cmd(self, environment='LC_ALL=C', command='/bin/bash'):
         '''
         Runs a command inside the sysroot
         '''
-        return self._run_cmd('sudo LC_ALL=C chroot {} {}'.format(self.settings['sysroot'], command))
+
+        display, _=self._get_virtual_display()
+        if display:
+            environment='"{}" "{}"'.format(environment, 'DISPLAY=:{}'.format(display))
+
+        cmdline='sudo {} chroot {} {}'.format(environment, self.settings['sysroot'], command)
+        return self._run_cmd(cmdline)
 
     def list_profiles(self):
         '''
@@ -198,17 +219,17 @@ class XSysroot():
         '''
         print 'Active profile: {} ({})'.format(self.profile, self.settings['description'])
         try:
-            print 'Available profiles:'
+            print 'Available profiles (* means mounted)'
             filename=self._get_settings_filename()
             if filename:
                 with open(filename, 'r') as f:
                     settings=json.load(f)
                     for profile in settings:
-                        mounted=''
+                        mounted=' '
                         if self.is_mounted(settings=settings[profile]):
-                            mounted = 'sysroot is mounted'
+                            mounted = '*'
 
-                        print ' {} ({}) {}'.format(profile, settings[profile]['description'], mounted)
+                        print ' {} {} ({})'.format(mounted, profile, settings[profile]['description'])
             else:
                 print 'could not find settings file: {}'.format(self.settings_filename)
         except:
@@ -220,6 +241,11 @@ class XSysroot():
         Prints all variables defined in the current profile
         '''
         for k,v in self.settings.items():
+            
+            if k in 'display':
+                disp, wmgr=self._get_virtual_display()
+                v='Display: {}, Window manager: {}'.format(disp, wmgr)
+
             print '{:<25}: {}'.format(k,v)
 
     def print_is_mounted(self):
@@ -258,12 +284,13 @@ class XSysroot():
         '''
         Mounts the sysroot image to get ready for use
         '''
-        if self.is_mounted():
+        mounted=self.is_mounted()
+        if mounted:
             print 'sysroot already mounted'
-            return False
+            return mounted
         elif not os.path.isfile(self.settings['qcow_image']):
                 print 'Qcow image not found {qcow_image} - please run "renew"'.format(**self.settings)
-                return False
+                return mounted
         else:
             print 'Mounting qcow image:', self.settings['qcow_image']
             p=self._run_cmd('mkdir -p {}'.format(self.settings['sysroot']))
@@ -274,16 +301,28 @@ class XSysroot():
 
             p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind {tmp} {sysroot}/tmp'.format(**self.settings))
+            mounted=self.is_mounted()
             print 'Mount done'
-            return True
+
+        # Start a virtual display
+        display_number, win_manager=self._get_virtual_display()
+        if mounted and display_number and win_manager:
+            print 'starting Display number {} running {}'.format(display_number, win_manager)
+
+            # TODO: parametrize resolution and extra Xserver options
+            self._run_cmd('Xvfb :{} -screen 0 1024x768x24 -shmem > /dev/null 2>&1 &'.format(display_number))
+            self._run_cmd('sleep 2; {} -display :{} > /dev/null 2>&1 &'.format(win_manager, display_number))
+
+        return mounted
 
     def umount(self):
         '''
         Unmounts the sysroot image and releases associated resources
         '''
-        if not self.is_mounted():
+        mounted=self.is_mounted()
+        if not mounted:
             print 'sysroot is already unmounted'
-            return False
+            return mounted
         else:
             # sanity check
             rc=self._run_cmd('sudo lsof {sysroot}'.format(**self.settings))
@@ -297,8 +336,16 @@ class XSysroot():
             p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}'.format(**self.settings))
             p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
+            mounted=self.is_mounted()
             print 'Unmount done'
-            return True
+
+        # Start a virtual display
+        display_number, win_manager=self._get_virtual_display()
+        if not mounted and display_number:
+            print 'Disconnecting Display number {} and window manager {}'.format(display_number, win_manager)
+            self._run_cmd('pkill -f "Xvfb :{}"'.format(display_number))
+
+        return mounted
 
     def renew(self):
         '''
@@ -337,7 +384,30 @@ class XSysroot():
             return False
         else:
             print 'sysroot executing: {}'.format(command)
-            self._xrun_cmd(command)
+            self._xrun_cmd(command=command)
+
+
+    def screenshot(self, filename='screenshot.png'):
+        '''
+        Takes a screnshot of the current sysroot virtual display
+        '''
+        success=False
+
+        if not self.is_mounted():
+            print 'sysroot not mounted - aborting'
+            return success
+
+        display, _=self._get_virtual_display()
+        if display:
+            rc=self._run_cmd('import -display :{} -window root {}'.format(display, filename))
+            if rc:
+                print 'Error taking a screenshot from display {}'.format(display)
+            else:
+                success=True
+        else:
+            print 'This sysroot does not have a virtual display'
+
+        return success
 
     def chroot(self):
         '''
@@ -371,7 +441,7 @@ class XSysroot():
                         pkgs_install += '{} '.format(item)
                         
                 print 'Installing packages in the sysroot:', pkgs_install
-                rc=self._xrun_cmd('apt-get --no-install-recommends -y install {}'.format(pkgs_install))
+                rc=self._xrun_cmd(command='apt-get --no-install-recommends -y install {}'.format(pkgs_install))
 
                 print 'apt-get completed with rc={}'.format(rc)
                 success=(rc==0)
@@ -439,6 +509,16 @@ def check_system_tools():
     rc = os.system('which dpkg-checkbuilddeps > /dev/null 2>&1')
     if rc:
         print 'Warning: debuild not found, please install devscripts package if you want to --build'
+
+    # The fake X server to provide a virtual screen to sysroots
+    rc = os.system('which Xvfb > /dev/null 2>&1')
+    if rc:
+        print 'Warning: Xvfb is not available, virtual displays will not be available'
+
+    # Imagemagick import for taking screenshots
+    rc = os.system('which import > /dev/null 2>&1')
+    if rc:
+        print 'Warning: tool "import" not found, screenshots will not be available (you need ImageMagick)'
 
     return True
 
@@ -547,6 +627,9 @@ if __name__ == '__main__':
     parser.add_option("-x", "--execute", dest="execute", metavar="CMD",
                       help='executes a command in the sysroot')
 
+    parser.add_option("-o", "--screenshot", dest="screenshot", metavar="IMAGE_FILE",
+                      help='take a screenshot of the virtual display (extension determines format)')
+
     parser.add_option("-d", "--depends", dest="depends", action="store_true",
                       help='installs Debian "Build-Depends" on the sysroot')
 
@@ -584,6 +667,8 @@ if __name__ == '__main__':
         xsys.chroot()
     elif options.execute:
         xsys.execute(options.execute)
+    elif options.screenshot:
+        xsys.screenshot(options.screenshot)
     elif options.depends:
         xsys.depends()
     elif options.build:
