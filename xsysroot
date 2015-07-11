@@ -592,6 +592,8 @@ Description: A small tool that gives sysroot access to multiple ARM Linux images
 
 if __name__ == '__main__':
 
+    success=False
+
     parser = OptionParser()
 
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
@@ -654,30 +656,30 @@ if __name__ == '__main__':
 
     # do the task requested
     if options.status:
-        xsys.status()
+        success=xsys.status()
     elif options.query:
-        xsys.query(options.query)
+        success=xsys.query(options.query)
     elif options.ismounted:
         is_mounted=xsys.print_is_mounted()
         sys.exit(is_mounted == True)
     elif options.renew:
-        xsys.renew()
+        success=xsys.renew()
     elif options.mount:
-        xsys.mount()
+        success=xsys.mount()
     elif options.umount:
-        xsys.umount()
+        success=xsys.umount()
     elif options.chroot:
-        xsys.chroot()
+        success=xsys.chroot()
     elif options.execute:
-        xsys.execute(options.execute)
+        success=xsys.execute(options.execute)
     elif options.screenshot:
-        xsys.screenshot(options.screenshot)
+        success=xsys.screenshot(options.screenshot)
     elif options.depends:
-        xsys.depends()
+        success=xsys.depends()
     elif options.build:
-        xsys.build()
+        success=xsys.build()
     elif options.skeleton:
-        create_debian_skeleton(options.skeleton)
+        success=create_debian_skeleton(options.skeleton)
     elif options.tools:
         if not check_system_tools():
             print 'You seem to be missing basic tools to run xsysroot'
@@ -688,5 +690,5 @@ if __name__ == '__main__':
     else:
         print 'please tell me what to do, -h to see available commands'
         sys.exit(1)
-        
-    sys.exit(0)
+
+    sys.exit(success==0)
