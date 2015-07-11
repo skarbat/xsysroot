@@ -48,6 +48,7 @@ default_settings='''
      "backing_image": "~/pipaos-3.5-wheezy-xgui.img.gz",
      "qcow_image": "~/pipaos-3.5-wheezy-xgui.qcow",
      "qcow_size": "4G"
+     "display": "1024x768x24 fluxbox"
   }
 }
 '''
@@ -102,16 +103,16 @@ class XSysroot():
 
     def _get_virtual_display(self):
         '''
-        Returns a display number and Window Manager to allocate a virtual display.
+        Returns a display number, requested resolution and Window Manager to allocate a virtual screen.
         '''
         try:
-            # Name of the window manager to use (e.g. fluxbox)
-            win_manager = self.settings['display']
+            # Display resolution and window manager to use (e.g. "1024x768x24 fluxbox")
+            resolution, win_manager = self.settings['display'].split(' ')
 
             # The display number will be bound to the same NBDEV device number
             display_number = re.search('(\d+)', self.settings['nbdev']).group()
 
-            return display_number, win_manager
+            return display_number, resolution, win_manager
         except:
             return None, None
 
@@ -206,7 +207,7 @@ class XSysroot():
         Runs a command inside the sysroot
         '''
 
-        display, _=self._get_virtual_display()
+        display, _, _=self._get_virtual_display()
         if display:
             environment='"{}" "{}"'.format(environment, 'DISPLAY=:{}'.format(display))
 
@@ -243,8 +244,8 @@ class XSysroot():
         for k,v in self.settings.items():
             
             if k in 'display':
-                disp, wmgr=self._get_virtual_display()
-                v='Display: {}, Window manager: {}'.format(disp, wmgr)
+                display, resolution, wmgr=self._get_virtual_display()
+                v='Display: {}, Resolution: {}, Window manager: {}'.format(display, resolution, wmgr)
 
             print '{:<25}: {}'.format(k,v)
 
@@ -300,18 +301,19 @@ class XSysroot():
             p=self._run_cmd('sudo mount {nbdev}{nbdev_part} {sysroot}'.format(**self.settings))
 
             p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
+            p=self._run_cmd('sudo mount --bind /sys {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind {tmp} {sysroot}/tmp'.format(**self.settings))
             mounted=self.is_mounted()
             print 'Mount done'
 
-        # Start a virtual display
-        display_number, win_manager=self._get_virtual_display()
-        if mounted and display_number and win_manager:
-            print 'starting Display number {} running {}'.format(display_number, win_manager)
+        # Start a virtual display server, bound to a tcp endpoint so the sysroot can connect to it
+        display_number, resolution, win_manager=self._get_virtual_display()
+        if mounted and display_number and resolution and win_manager:
+            cmdline='xvfb-run -l --server-args="-screen 0 {} -shmem" --xauth-protocol="localhost:{}" ' \
+                '--server-num {} fluxbox > /dev/null 2>&1 &'.format(resolution, display_number, display_number)
 
-            # TODO: parametrize resolution and extra Xserver options
-            self._run_cmd('Xvfb :{} -screen 0 1024x768x24 -shmem > /dev/null 2>&1 &'.format(display_number))
-            self._run_cmd('sleep 2; {} -display :{} > /dev/null 2>&1 &'.format(win_manager, display_number))
+            print 'starting display number {} resolution {} window manager {}'.format(display_number, resolution, win_manager)
+            self._run_cmd(cmdline)
 
         return mounted
 
@@ -332,6 +334,7 @@ class XSysroot():
 
             print 'unmounting {qcow_image}'.format(**self.settings)
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}'.format(**self.settings))
@@ -339,8 +342,8 @@ class XSysroot():
             mounted=self.is_mounted()
             print 'Unmount done'
 
-        # Start a virtual display
-        display_number, win_manager=self._get_virtual_display()
+        # Stop the virtual display
+        display_number, resolution, win_manager=self._get_virtual_display()
         if not mounted and display_number:
             print 'Disconnecting Display number {} and window manager {}'.format(display_number, win_manager)
             self._run_cmd('pkill -f "Xvfb :{}"'.format(display_number))
@@ -397,7 +400,7 @@ class XSysroot():
             print 'sysroot not mounted - aborting'
             return success
 
-        display, _=self._get_virtual_display()
+        display, _, _=self._get_virtual_display()
         if display:
             rc=self._run_cmd('import -display :{} -window root {}'.format(display, filename))
             if rc:
