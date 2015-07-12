@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.3
+__version__ = 1.4
 
 import os
 import sys
@@ -588,7 +588,71 @@ Description: A small tool that gives sysroot access to multiple ARM Linux images
     print 'Debian skeleton package created at: {}'.format(debian_directory)
     return True
     
+def create_image(geometry, nbdev='/dev/nbd0'):
 
+    image_size=0
+    part_offset=0
+    partitions=[]
+
+    def safe_exec(cmdline, silent=True):
+        '''
+        Executes a command making sure it succeds
+        '''
+        try:
+            if silent:
+                cmdline=cmdline + ' >/dev/null 2>&1'
+            rc=os.system(cmdline)
+            assert(rc==0)
+        except:
+            raise IOError('Error executing step: {}'.format(cmdline))
+
+    # collect geometry details
+    details=geometry.split(' ')
+    filename=details[0]
+
+    if os.path.isfile(filename):
+        print 'image file already exists: {}'.format(filename)
+        return False
+
+    for partnum, partition in enumerate(details[1:]):
+        partype, partsize=partition.split(':')
+        partitions.append({ 'partnum' : partnum, 'partype' : partype, 'partsize': partsize })
+        image_size += int(partsize)
+
+    print 'creating {}MB image file {}...'.format(image_size, filename)
+    rc=safe_exec('dd if=/dev/zero of={} bs=1MB count={}'.format(filename, image_size))
+    rc=safe_exec('sudo parted --script {} mklabel msdos'.format(filename))
+
+    for part in partitions:
+        print ' partition {} type {} size {}MB'.format(part['partnum'], part['partype'], part['partsize'])
+        if part['partnum'] == 0:
+            # this is the first partition
+            rc=safe_exec('sudo parted --script {} mkpart primary {} -- 1 {}MB'.format(filename, part['partype'], part['partsize']))
+        elif part['partnum'] < len(partitions) -1:
+            # intermediate partition
+            disk_offset=part_offset + int(part['partsize'])
+            rc=safe_exec('sudo parted --script {} mkpart primary {} {}MB {}MB'.format(filename, part['partype'], part_offset, disk_offset))
+        elif part['partnum'] == len(partitions) -1:
+            # this is the last partition
+            rc=safe_exec('sudo parted --script {} mkpart primary {} {}MB 100%'.format(filename, part['partype'], part_offset))
+
+        # keep track of the current partition offset in MB
+        part_offset += int(part['partsize']) + 1
+
+    # Map the image through a disk device so we can format partitions
+    print 'formatting partitions...',
+    sys.stdout.flush()
+    rc=safe_exec('sudo qemu-nbd -d {}'.format(nbdev))
+    rc=safe_exec('sudo qemu-nbd -c {} {}'.format(nbdev, filename))
+    for part in partitions:
+        if part['partype'].startswith('fat'):
+            rc=safe_exec('sudo mkfs.vfat -n "xsysroot" -v -F 16 {}p{}'.format(nbdev, part['partnum'] + 1))
+        elif part['partype'].startswith('ext'):
+            rc=safe_exec('sudo mkfs.{} -q -O ^huge_file {}p{}'.format(part['partype'], nbdev, part['partnum'] + 1))
+
+    rc=safe_exec('sudo qemu-nbd -d {}'.format(nbdev))
+    print 'done!'
+    return True
 
 if __name__ == '__main__':
 
@@ -644,6 +708,9 @@ if __name__ == '__main__':
     parser.add_option("-k", "--skeleton", dest="skeleton", metavar="DIRECTORY", default=None,
                       help='gives you a Debian package control directory skeleton')
 
+    parser.add_option("-g", "--image", dest="image", metavar="GEOMETRY", default=None,
+                      help='create and partition new image using geometry in MB (e.g. "myimage.img fat32:40 ext3:200"')
+
     (options, args) = parser.parse_args()
 
     # instantiate the class that does the big job
@@ -680,6 +747,8 @@ if __name__ == '__main__':
         success=xsys.build()
     elif options.skeleton:
         success=create_debian_skeleton(options.skeleton)
+    elif options.image:
+        success=create_image(options.image)
     elif options.tools:
         if not check_system_tools():
             print 'You seem to be missing basic tools to run xsysroot'
