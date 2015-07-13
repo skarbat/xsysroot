@@ -114,7 +114,7 @@ class XSysroot():
 
             return display_number, resolution, win_manager
         except:
-            return None, None
+            return None, None, None
 
     def _load_settings(self):
         '''
@@ -708,7 +708,7 @@ if __name__ == '__main__':
     parser.add_option("-k", "--skeleton", dest="skeleton", metavar="DIRECTORY", default=None,
                       help='gives you a Debian package control directory skeleton')
 
-    parser.add_option("-g", "--image", dest="image", metavar="GEOMETRY", default=None,
+    parser.add_option("-g", "--geometry", dest="image", metavar="GEOMETRY", default=None,
                       help='create and partition new image using geometry in MB (e.g. "myimage.img fat32:40 ext3:200"')
 
     (options, args) = parser.parse_args()
