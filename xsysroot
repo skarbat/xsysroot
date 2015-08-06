@@ -285,6 +285,18 @@ class XSysroot():
         '''
         print self.settings[variable]
         return True
+
+    def running(self):
+        '''
+        Finds and reports any processes currently running on the sysroot
+        Returns True if processes were found, False otherwise
+        '''
+        if not self.is_mounted():
+            print 'sysroot not mounted'
+            return False
+
+        rc=self._run_cmd('sudo lsof {sysroot}'.format(**self.settings))
+        return (rc == 0)
         
     def mount(self):
         '''
@@ -332,8 +344,7 @@ class XSysroot():
             return True
         else:
             # sanity check
-            rc=self._run_cmd('sudo lsof {sysroot}'.format(**self.settings))
-            if rc == 0:
+            if self.running() == True:
                 print 'ERROR - there seem to be processes working on this sysroot, umount aborted'
                 return False
 
@@ -692,6 +703,9 @@ if __name__ == '__main__':
     parser.add_option("-q", "--query", dest="query", metavar="VAR",
                       help='query a profile variable name')
 
+    parser.add_option("-n", "--running", dest="running", action="store_true",
+                      help='display any processes currently running on the sysroot')
+
     parser.add_option("-i", "--is-mounted", dest="ismounted", action="store_true",
                       help='returns wether sysroot is mounted')
 
@@ -740,6 +754,8 @@ if __name__ == '__main__':
         success=xsys.status()
     elif options.query:
         success=xsys.query(options.query)
+    elif options.running:
+        success=xsys.running()
     elif options.ismounted:
         is_mounted=xsys.print_is_mounted()
         sys.exit(is_mounted == True)
