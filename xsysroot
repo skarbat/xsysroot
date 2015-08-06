@@ -283,8 +283,7 @@ class XSysroot():
         Queries a variable from your current profile configuration
         Useful for automated scripts - i.e. cat $(xsysroot -q tmp)
         '''
-        print self.settings[variable]
-        return True
+        return self.settings[variable]
 
     def running(self):
         '''
@@ -753,7 +752,10 @@ if __name__ == '__main__':
     if options.status:
         success=xsys.status()
     elif options.query:
-        success=xsys.query(options.query)
+        value=xsys.query(options.query)
+        if value:
+            print value
+            success=True
     elif options.running:
         success=xsys.running()
     elif options.ismounted:
