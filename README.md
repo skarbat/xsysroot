@@ -57,7 +57,6 @@ If you frequently play with multiple sysroots, I recommend you unzip the images 
 this will greatly speed up recreating them from scratch with.
 
 ```
-$ xsysroot -h
 Usage: xsysroot [options]
 
 Options:
@@ -69,20 +68,28 @@ Options:
   -l, --list            list all available sysroot profiles
   -s, --status          display settings and mount status
   -q VAR, --query=VAR   query a profile variable name
+  -n, --running         display any processes currently running on the sysroot
   -i, --is-mounted      returns wether sysroot is mounted
   -r, --renew           rebuilds sysroot from scratch - QCOW DATA WILL BE LOST
+  -e, --expand          expands sysroot partition to fit image size,
+                        preserving data (must be ext2/ext3/ext4)
   -m, --mount           mount the current qcow image
   -u, --umount          unmount the current qcow image
   -c, --chroot          jumps you to an interactive ARM shell on the current
                         sysroot
   -x CMD, --execute=CMD
                         executes a command in the sysroot
+  -o IMAGE_FILE, --screenshot=IMAGE_FILE
+                        take a screenshot of the virtual display (extension
+                        determines format)
   -d, --depends         installs Debian "Build-Depends" on the sysroot
-  -b DIRECTORY, --build=DIRECTORY
-                        performs a Debian "debuild" on the host (cross build a
+  -b, --build           performs a Debian "debuild" on the host (cross build a
                         package)
   -k DIRECTORY, --skeleton=DIRECTORY
                         gives you a Debian package control directory skeleton
+  -g GEOMETRY, --geometry=GEOMETRY
+                        create and partition new image using geometry in MB
+                        (e.g. "myimage.img fat32:40 ext3:200"
 ```
 
 ###Python
