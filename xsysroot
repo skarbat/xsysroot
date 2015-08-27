@@ -316,6 +316,7 @@ class XSysroot():
             p=self._run_cmd('sudo qemu-nbd -c {nbdev} {qcow_image}; sync'.format(**self.settings))
             p=self._run_cmd('sudo mount {nbdev}{nbdev_part} {sysroot}'.format(**self.settings))
 
+            p=self._run_cmd('sudo mount --bind /dev {sysroot}/dev'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind /sys {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind {tmp} {sysroot}/tmp'.format(**self.settings))
@@ -351,6 +352,7 @@ class XSysroot():
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}/dev'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
             p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
