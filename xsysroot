@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.5
+__version__ = 1.6
 
 import os
 import sys
@@ -309,17 +309,27 @@ class XSysroot():
                 print 'Qcow image not found {qcow_image} - please run "renew"'.format(**self.settings)
                 return mounted
         else:
-            print 'Mounting qcow image:', self.settings['qcow_image']
+            print 'binding qcow image:', self.settings['qcow_image']
             p=self._run_cmd('mkdir -p {}'.format(self.settings['sysroot']))
             p=self._run_cmd('mkdir -p {}'.format(self.settings['tmp']))
 
+            # Connect the image and mount the "nbdev" root partition
             p=self._run_cmd('sudo qemu-nbd -c {nbdev} {qcow_image}; sync'.format(**self.settings))
+            print 'mounting root partition {nbdev}{nbdev_part} -> {sysroot}'.format(**self.settings)
             p=self._run_cmd('sudo mount {nbdev}{nbdev_part} {sysroot}'.format(**self.settings))
 
+            # Map linux virtual file systems into the host
             p=self._run_cmd('sudo mount --bind /dev {sysroot}/dev'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind /sys {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind {tmp} {sysroot}/tmp'.format(**self.settings))
+
+            # try to mount the boot partition if specified
+            if self.settings.has_key('boot_part') and self.settings.has_key('sysboot'):
+                p=self._run_cmd('mkdir -p {}'.format(self.settings['sysboot']))
+                print 'mounting boot partition {nbdev}{boot_part} -> {sysboot}'.format(**self.settings)
+                p=self._run_cmd('sudo mount {nbdev}{boot_part} {sysboot}'.format(**self.settings))
+
             mounted=self.is_mounted()
             print 'Mount done'
 
@@ -331,6 +341,10 @@ class XSysroot():
 
             print 'starting display number {} resolution {} window manager {}'.format(display_number, resolution, win_manager)
             self._run_cmd(cmdline)
+
+        if not mounted:
+            # if problems mounting, tell Qemu to free the image
+            p=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
 
         return mounted
 
@@ -348,12 +362,18 @@ class XSysroot():
                 print 'ERROR - there seem to be processes working on this sysroot, umount aborted'
                 return False
 
-            print 'unmounting {qcow_image}'.format(**self.settings)
+            print 'unbinding {qcow_image}'.format(**self.settings)
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/dev'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
+
+            # try to unmount the boot partition if mounted
+            if self.settings.has_key('boot_part') and self.settings.has_key('sysboot'):
+                p=self._run_cmd('sudo umount {sysboot}'.format(**self.settings))
+                p=self._run_cmd('rmdir {sysboot}'.format(**self.settings))
+
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
             p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
             mounted=self.is_mounted()

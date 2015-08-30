@@ -18,24 +18,30 @@ Xsysroot works well on both 32 and 64 bit host systems. It should also play well
 ###Features
 
 xsysroot starts by taking an ARM OS image and gives you a mounted environment
-where you can chroot into, emualating ARM on the fly. The original image can be
+where you can chroot into, emulating ARM on the fly. The original image can be
 provided in raw (img), gz, xz or zip formats.
-
-Once you start working on the mounted image, all disk changes will go into a qcow image,
-this enables to recreate the image at any point from scratch very quickly (-r option).
-And because qcow images will grow dynamically, they are start very small in size
-and are easy to share over the network, recreating the same sysroot environment on other systems.
-
-The `tmp` mountpoint will be mapped on the host system, and will be accessible from
-the sysroot fmor `/tmp`. This allows to access big space demanding data transparently.
 
 The `xsysroot.conf` file is a collection of image profiles, which enables xsysroot
 to mount several independent images at the same time. You can quickly jump between them
 with the `-p` option.
 
+Once you start working on the mounted image, all disk changes will go into a qcow image,
+this enables to recreate the image at any point from scratch very quickly (-r option).
+And because qcow images will grow dynamically, they start very small in size
+and are easy to share over the network, recreating the same sysroot environment on other systems.
+
+The `tmp` mountpoint will be mapped on the host system, and will be accessible from
+the sysroot from `/tmp`. This allows to access big space demanding data transparently.
+
+If you need to mount the boot partition, specify the `boot_part` and `sysboot` keys.
+
 For developers who want to build Debian packages, the `-k` option will give you a skeleton
 directory to start with, the `-d` to install all `Build-Depends` in the sysroot, and finally
 `-b` to go through a `debuild` process to cross build a package.
+
+It is also possible the expand a partition size. Simply specify your desired size in 
+the `qcow_size` key, unmount the image and call xsysroot with `--expand`. Supported
+partition types aere ext2/3/4.
 
 ###Usage
 
@@ -53,8 +59,8 @@ $ curl http://pipaos.mitako.eu/download/pipaos-3.5-wheezy-xgui.img.gz -o ~/pipao
 At this point you can quickly prepare a pipaOS sysroot by calling `xsysroot -r`,
 which will uncompress and mount the image.
 
-If you frequently play with multiple sysroots, I recommend you unzip the images upfront,
-this will greatly speed up recreating them from scratch with.
+If you frequently play with multiple sysroots, it is better to uncompress the backing_image,
+this will greatly speed up recreating them from scratch with the `--renew` option.
 
 ```
 Usage: xsysroot [options]
