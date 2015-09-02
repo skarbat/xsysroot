@@ -337,7 +337,7 @@ class XSysroot():
         display_number, resolution, win_manager=self._get_virtual_display()
         if mounted and display_number and resolution and win_manager:
             cmdline='xvfb-run -l --server-args="-screen 0 {} -shmem" --xauth-protocol="localhost:{}" ' \
-                '--server-num {} fluxbox > /dev/null 2>&1 &'.format(resolution, display_number, display_number)
+                '--server-num {} {} > /dev/null 2>&1 &'.format(resolution, display_number, display_number, win_manager)
 
             print 'starting display number {} resolution {} window manager {}'.format(display_number, resolution, win_manager)
             self._run_cmd(cmdline)
