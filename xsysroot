@@ -467,7 +467,7 @@ class XSysroot():
                     if rc:
                         print 'Error creating new partition at offset {}'.format(part_start)
                     else:
-                        rc=self._run_cmd('sudo e2fsck -f {}; sudo resize2fs {}; sync'.format(part_device, part_device))
+                        rc=self._run_cmd('sudo e2fsck -p -f {}; sudo resize2fs {}; sync'.format(part_device, part_device))
                         if rc:
                             print 'Error checking and resizing new partition {}'.format(part_device)
                         else:
@@ -633,8 +633,9 @@ def check_system_tools():
     # Parted tool to generate raw images
     rc1 = os.system('sudo which parted > /dev/null 2>&1')
     rc2 = os.system('sudo which resize2fs > /dev/null 2>&1')
-    if rc1 or rc2:
-        print 'Warning: tools "parted" and/or "resize2fs" not found, --geometry option will not be available'
+    rc3 = os.system('sudo which e2fsck > /dev/null 2>&1')
+    if rc1 or rc2 or rc3:
+        print 'Warning: tools "parted", "resize2fs" or "e2fsck" not found, --geometry option will not be available'
 
     return True
 
