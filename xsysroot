@@ -47,7 +47,7 @@ default_settings='''
      "tmp" : "/tmp/pipaos-tmp",
      "backing_image": "~/pipaos-3.5-wheezy-xgui.img.gz",
      "qcow_image": "~/pipaos-3.5-wheezy-xgui.qcow",
-     "qcow_size": "4G"
+     "qcow_size": "4G",
      "display": "1024x768x24 fluxbox"
   }
 }
