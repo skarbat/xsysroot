@@ -328,7 +328,10 @@ class XSysroot():
             if self.settings.has_key('boot_part') and self.settings.has_key('sysboot'):
                 p=self._run_cmd('mkdir -p {}'.format(self.settings['sysboot']))
                 print 'mounting boot partition {nbdev}{boot_part} -> {sysboot}'.format(**self.settings)
-                p=self._run_cmd('sudo mount {nbdev}{boot_part} {sysboot}'.format(**self.settings))
+                rc=self._run_cmd('sudo mount {nbdev}{boot_part} {sysboot}'.format(**self.settings))
+                if not rc:
+                    # Create a bind mount so the boot partition is accesible from the root
+                    self._run_cmd('sudo mount --bind {sysboot} {sysroot}/boot'.format(**self.settings))
 
             mounted=self.is_mounted()
             print 'Mount done'
@@ -367,12 +370,14 @@ class XSysroot():
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/dev'.format(**self.settings))
-            p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
 
             # try to unmount the boot partition if mounted
             if self.settings.has_key('boot_part') and self.settings.has_key('sysboot'):
                 p=self._run_cmd('sudo umount {sysboot}'.format(**self.settings))
                 p=self._run_cmd('rmdir {sysboot}'.format(**self.settings))
+                p=self._run_cmd('sudo umount {sysroot}/boot'.format(**self.settings))
+
+            p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
 
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
             p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
