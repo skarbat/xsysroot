@@ -532,7 +532,7 @@ class XSysroot():
             print 'sysroot not mounted - please mount first with -m'
             return -1
         else:
-            print 'Starting ARM sysroot shell into: {sysroot}'.format(**self.settings)
+            print 'Starting sysroot shell into: {sysroot}'.format(**self.settings)
             return self._xrun_cmd()
 
     def depends(self, repo_dir='.'):
