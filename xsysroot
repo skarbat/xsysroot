@@ -489,7 +489,7 @@ class XSysroot():
         rc=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
         return expanded
 
-    def execute(self, command):
+    def execute(self, command, verbose=True):
         '''
         Executes a command inside the sysroot.
         Returns the program errorlevel, -1 if failure
@@ -498,7 +498,9 @@ class XSysroot():
             print 'sysroot not mounted - aborting'
             return -1
         else:
-            print 'sysroot executing: {}'.format(command)
+            if verbose:
+                print 'sysroot executing: {}'.format(command)
+
             return self._xrun_cmd(command=command)
 
     def screenshot(self, filename='screenshot.png'):
