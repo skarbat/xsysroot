@@ -503,6 +503,18 @@ class XSysroot():
 
             return self._xrun_cmd(command=command)
 
+    def edfile(self, filename, literal, append=False):
+        '''
+        Dumps a literal into a file, appending at the end if specified.
+        If you need to pass quotation marks, make sure to escape them.
+        '''
+        redirection = '>'
+        if append:
+            redirection += '>'
+
+        return self.execute('/bin/bash -c "echo \'{}\' {} {}"'.format(
+                literal, redirection, filename))
+
     def screenshot(self, filename='screenshot.png'):
         '''
         Takes a screnshot of the current sysroot virtual display
