@@ -64,6 +64,14 @@ class XSysroot():
         self.vnc_start_port=5900
         self.last_profile_cache=os.path.join(os.path.expanduser('~'), '.xsysroot')
 
+        # Filenames in the sysroot to avoid Qemu syscall traps, for cross-CPU native libraries
+        self.ld_so_preload='etc/ld.so.preload'
+        self.ld_so_preload_backup='{}-backup'.format(self.ld_so_preload)
+
+        # In order to allow your sysroot access to private network data
+        # a custom DNS setting is specified here.
+        self.dns_server='109.69.8.34'
+
         # choose a settings profile, or set to last used
         if not profile:
             self.profile=self._get_active_profile()
@@ -193,9 +201,8 @@ class XSysroot():
         print 'Preparing sysroot for chroot to function correctly'
         self._run_cmd('sudo cp $(which qemu-arm-static) ' \
                           '{sysroot}/usr/bin'.format(**self.settings))
-        self._run_cmd('sudo rm -fv {sysroot}/etc/resolv.conf'.format(**self.settings))
-        self._run_cmd('echo "nameserver 8.8.8.8" | sudo tee {sysroot}/etc/resolv.conf'.format(**self.settings))
-        self._run_cmd('sudo sed -e "/.*libcofi.*/ s/^#*/#/" -i {sysroot}/etc/ld.so.preload'.format(**self.settings))
+
+        self.edfile('/etc/resolv.conf', 'nameserver {}'.format(self.dns_server), verbose=False)
         print 'Preparation done'
         return True
 
@@ -329,6 +336,12 @@ class XSysroot():
             print 'mounting root partition {nbdev}{nbdev_part} -> {sysroot}'.format(**self.settings)
             p=self._run_cmd('sudo mount {nbdev}{nbdev_part} {sysroot}'.format(**self.settings))
 
+            # Disable ld.so.preload from dragging QEMU unsupported syscalls (restored on umount)
+            if os.path.isfile('{}/{}'.format(self.query('sysroot'), self.ld_so_preload)):
+                self._run_cmd('sudo mv -fv {}/{} {}/{}'.format(
+                        self.query('sysroot'), self.ld_so_preload,
+                        self.query('sysroot'), self.ld_so_preload_backup))
+
             # Map linux virtual file systems into the host
             p=self._run_cmd('sudo mount --bind /dev {sysroot}/dev'.format(**self.settings))
             p=self._run_cmd('sudo mount --bind /proc {sysroot}/proc'.format(**self.settings))
@@ -386,6 +399,12 @@ class XSysroot():
                 print 'ERROR - there seem to be processes working on this sysroot, umount aborted'
                 return False
 
+            # Restore ld.so.preload to its original state (QEMU syscalls safeguard)
+            if os.path.isfile('{}/{}'.format(self.query('sysroot'), self.ld_so_preload_backup)):
+                self._run_cmd('sudo mv -fv {}/{} {}/{}'.format(
+                        self.query('sysroot'), self.ld_so_preload_backup,
+                        self.query('sysroot'), self.ld_so_preload))
+            
             print 'unbinding {qcow_image}'.format(**self.settings)
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
@@ -524,7 +543,7 @@ class XSysroot():
 
             return self._xrun_cmd(command=command)
 
-    def edfile(self, filename, literal, append=False):
+    def edfile(self, filename, literal, append=False, verbose=True):
         '''
         Dumps a literal into a file, appending at the end if specified.
         If you need to pass quotation marks, make sure to escape them.
@@ -534,7 +553,7 @@ class XSysroot():
             redirection += '>'
 
         return self.execute('/bin/bash -c "echo \'{}\' {} {}"'.format(
-                literal, redirection, filename))
+                literal, redirection, filename), verbose)
 
     def screenshot(self, filename='screenshot.png'):
         '''
