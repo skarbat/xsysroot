@@ -26,10 +26,11 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.6
+__version__ = 1.7
 
 import os
 import sys
+import socket
 import subprocess
 import json
 import re
@@ -60,6 +61,7 @@ class XSysroot():
     def __init__(self, profile=None, verbose=True):
         self.verbose=verbose
         self.settings_filename='xsysroot.conf'
+        self.vnc_start_port=5900
         self.last_profile_cache=os.path.join(os.path.expanduser('~'), '.xsysroot')
 
         # choose a settings profile, or set to last used
@@ -248,7 +250,16 @@ class XSysroot():
             
             if k in 'display':
                 display, resolution, wmgr=self._get_virtual_display()
-                v='Display: {}, Resolution: {}, Window manager: {}'.format(display, resolution, wmgr)
+                vnc = 'n/a'
+                try:
+                    # Find out if the VNC server is running on this virtual display
+                    x11_vnc_pid = int(os.popen('pgrep -f "[x]11vnc -display :{}"'.format(display)).read())
+                    if x11_vnc_pid > 1:
+                        vnc='{}:{}'.format(socket.gethostname(), int(display)+self.vnc_start_port)
+                except:
+                    pass
+
+                v='Display: {}, Resolution: {}, WMgr: {}, VNC: {}'.format(display, resolution, wmgr, vnc)
 
             print '{:<25}: {}'.format(k,v)
 
@@ -339,11 +350,21 @@ class XSysroot():
         # Start a virtual display server, bound to a tcp endpoint so the sysroot can connect to it
         display_number, resolution, win_manager=self._get_virtual_display()
         if mounted and display_number and resolution and win_manager:
+
+            # Start a Frame Buffer headless X server.
             cmdline='xvfb-run -l --server-args="-screen 0 {} -shmem" --xauth-protocol="localhost:{}" ' \
                 '--server-num {} {} > /dev/null 2>&1 &'.format(resolution, display_number, display_number, win_manager)
 
-            print 'starting display number {} resolution {} window manager {}'.format(display_number, resolution, win_manager)
-            self._run_cmd(cmdline)
+            rc=self._run_cmd(cmdline)
+            if rc == 0:
+                print 'started display number :{} resolution {} window manager {}'.format(display_number, resolution, win_manager)
+
+            # Start a VNC server attached to the fake X server, on termination it will die when we terminate the headless.
+            rc=self._run_cmd('x11vnc -display :{} -forever -shared -bg -N ' \
+                                 '-no6 -noipv6 > /dev/null 2>&1'.format(display_number))
+            if rc == 0:
+                print 'attached a VNC server to display :{} network address {}:{}'.format(
+                    display_number, socket.gethostname(), int(display_number)+self.vnc_start_port)
 
         if not mounted:
             # if problems mounting, tell Qemu to free the image
@@ -644,6 +665,11 @@ def check_system_tools():
     if rc:
         print 'Warning: Xvfb is not available, virtual displays will not be available'
 
+    # The VNC server will allow to connect to the xsysroot virtual display remotely
+    rc = os.system('which x11vnc > /dev/null 2>&1')
+    if rc:
+        print 'Warning: X11VNC is not available, install it to connect remotely to virtual displays'
+
     # Imagemagick import for taking screenshots
     rc = os.system('which import > /dev/null 2>&1')
     if rc:
@@ -801,6 +827,9 @@ if __name__ == '__main__':
     parser.add_option("-v", "--verbose", action="store_true", dest="verbose", default=False,
                       help="print more progress information")
 
+    parser.add_option("-V", "--version", action="store_true", dest="version", default=False,
+                      help="print xsysroot version and exit")
+
     parser.add_option("-t", "--tools", action="store_true", dest="tools", default=False,
                       help="performs a basic test to see if system tools are ready")
 
@@ -859,6 +888,11 @@ if __name__ == '__main__':
 
     # instantiate the class that does the big job
     xsys=XSysroot(profile=options.profile, verbose=options.verbose)
+
+    # if -V, print version and exit
+    if options.version:
+        print 'Xsysroot version: {}'.format(__version__)
+        sys.exit(0)
 
     # if -l, list profiles and quit
     if options.list:
