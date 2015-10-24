@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.7
+__version__ = 1.8
 
 import os
 import sys
@@ -836,6 +836,62 @@ def create_image(geometry, nbdev='/dev/nbd0'):
     print 'done!'
     return True
 
+def upgrade_xsysroot():
+    '''
+    Function to automatically upgrade your installed xsysroot binary.
+    Contacts github to fetch the latest version and replaces itself.
+    You most likely need root permissions if installed in a system directory.
+    '''
+
+    xsysroot_github_url='raw.githubusercontent.com'
+    xsysroot_file_url='/skarbat/xsysroot/master/xsysroot'
+
+    import httplib
+    import re
+
+    print 'Contacting github...'
+    connection = httplib.HTTPSConnection(xsysroot_github_url)
+    connection.request('GET', xsysroot_file_url)
+    response=connection.getresponse()
+
+    if response.status==200 and response.reason=='OK':
+        # Connected to github, fetch the code and close session
+        xsysroot_code=response.read()
+        response.close()
+
+        # Compare versions
+        import re
+        find_version = re.search(r'__version__[\s]=[\s](.*)', xsysroot_code)
+        if not find_version:
+            print 'Could not find latest xsysroot version on Github'
+        else:
+            version_at_github=float(find_version.group(1))
+            if version_at_github > float(__version__):
+
+                local_xsysroot_filename=os.popen('which xsysroot').read().strip()
+
+                # Upgrade by replacing the xsysroot binary directly
+                with open(local_xsysroot_filename, 'w') as f_xsysroot:
+                    f_xsysroot.write(xsysroot_code)
+
+                print 'Upgraded your {} version from {} to {}'.format(
+                    local_xsysroot_filename, __version__, version_at_github)
+
+                return True
+
+            elif version_at_github < float(__version__):
+                print 'Your local version ({}) is higher than that on github ({}), did you fork it?'.format(
+                    __version__, version_at_github)
+            else:
+                print 'xsysroot is already the latest version: {}'.format(version_at_github)
+
+    else:
+        print 'Could not fetch xsysroot: {}{} - {} {}'.format(
+            xsysroot_github_url, xsysroot_file_url, response.status, response.reason)
+
+    return False
+
+
 
 if __name__ == '__main__':
 
@@ -903,6 +959,9 @@ if __name__ == '__main__':
     parser.add_option("-g", "--geometry", dest="image", metavar="GEOMETRY", default=None,
                       help='create and partition new image using geometry in MB (e.g. "myimage.img fat32:40 ext3:200"')
 
+    parser.add_option("-U", "--upgrade", dest="upgrade", action="store_true",
+                      help='Upgrade to the latest version of xsysroot')
+
     (options, args) = parser.parse_args()
 
     # instantiate the class that does the big job
@@ -910,8 +969,15 @@ if __name__ == '__main__':
 
     # if -V, print version and exit
     if options.version:
-        print 'Xsysroot version: {}'.format(__version__)
+        print 'xsysroot version: {}'.format(__version__)
         sys.exit(0)
+
+    # if -U, upgrade xsysroot and quit
+    if options.upgrade:
+        if upgrade_xsysroot():
+            sys.exit(0)
+
+        sys.exit(1)
 
     # if -l, list profiles and quit
     if options.list:
