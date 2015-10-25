@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.9
+__version__ = 1.901
 
 import os
 import sys
@@ -66,7 +66,7 @@ class XSysroot():
 
         # Filenames in the sysroot to avoid Qemu syscall traps, for cross-CPU native libraries
         self.ld_so_preload='etc/ld.so.preload'
-        self.ld_so_preload_backup='{}-backup'.format(self.ld_so_preload)
+        self.ld_so_preload_backup='{}-disabled'.format(self.ld_so_preload)
 
         # In order to allow your sysroot access to private network data
         # a custom DNS setting is specified here.
@@ -529,6 +529,40 @@ class XSysroot():
         rc=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
         return expanded
 
+    def zerofree(self, partition='all', verbose=True):
+        '''
+        Fills up a partition free space with zeroes. Increases final image compression ratio.
+        partition is the NBDEV device name, by default it will zero sysroot partition (nbdev_part variable).
+        The image needs to be unmounted for this function to work.
+        '''
+        success=False
+
+        if self.is_mounted():
+            print 'sysroot is mounted - aborting'
+        elif partition=='all':
+            rc=self.zerofree(self.query('nbdev_part'))
+            success = (rc==0)
+        elif not re.match('(p\d+)$', partition):
+            print 'Partition name not recognized, must be p1, p2, .. {}'.format(partition)
+        else:
+            print 'connecting image {} to zerofree partition {}'.format(self.query('qcow_image'), partition)
+            rc_connect=self._run_cmd('sudo qemu-nbd -c {nbdev} {qcow_image}; sync'.format(**self.settings))
+            if rc_connect:
+                print 'error connecting image'
+            else:
+                zero_device='{}{}'.format(self.query('nbdev'), partition)
+                print 'zero free', zero_device
+                cmdline='sudo zerofree {}'.format(zero_device)
+                if verbose:
+                    cmdline += ' -v'
+                rc=self._run_cmd(cmdline)
+
+            print 'disconnecting image'
+            rc_disconnect=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
+            success = (rc_connect==0)
+
+        return success
+
     def execute(self, command, verbose=True, pipes=False):
         '''
         Executes a command inside the sysroot.
@@ -963,6 +997,9 @@ if __name__ == '__main__':
     parser.add_option("-g", "--geometry", dest="image", metavar="GEOMETRY", default=None,
                       help='create and partition new image using geometry in MB (e.g. "myimage.img fat32:40 ext3:200"')
 
+    parser.add_option("-z", "--zerofree", dest="zerofree", action="store_true",
+                      help='fill all partitions free space with zeroes to increase compression ratio"')
+
     parser.add_option("-U", "--upgrade", dest="upgrade", action="store_true",
                       help='Upgrade to the latest version of xsysroot')
 
@@ -1025,6 +1062,8 @@ if __name__ == '__main__':
         success=create_debian_skeleton(options.skeleton)
     elif options.image:
         success=create_image(options.image)
+    elif options.zerofree:
+        success=xsys.zerofree()
     elif options.tools:
         if not check_system_tools():
             print 'You seem to be missing basic tools to run xsysroot'
