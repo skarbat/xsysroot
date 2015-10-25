@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.8
+__version__ = 1.9
 
 import os
 import sys
@@ -529,7 +529,7 @@ class XSysroot():
         rc=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
         return expanded
 
-    def execute(self, command, verbose=True):
+    def execute(self, command, verbose=True, pipes=False):
         '''
         Executes a command inside the sysroot.
         Returns the program errorlevel, -1 if failure
@@ -540,6 +540,10 @@ class XSysroot():
         else:
             if verbose:
                 print 'sysroot executing: {}'.format(command)
+
+            # If the command uses pipes, embrace it inside bash
+            if pipes:
+                command = "/bin/bash -c '{}'".format(command)
 
             return self._xrun_cmd(command=command)
 
