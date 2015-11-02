@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.902
+__version__ = 1.903
 
 import os
 import sys
@@ -78,7 +78,7 @@ class XSysroot():
         else:
             self.profile=profile
 
-        self._load_settings()
+        self._load_profile()
 
     def _get_settings_filename(self):
         '''
@@ -127,9 +127,10 @@ class XSysroot():
         except:
             return None, None, None
 
-    def _load_settings(self):
+    def _load_profile(self):
         '''
-        Loads your configuration file from /etc, your home directory, or embedded in the xsysroot module
+        Loads your current working profile from the configuration file at /etc,
+        your home directory, or embedded in the xsysroot module.
         '''
         self.settings=None
         try:
@@ -882,6 +883,58 @@ def create_image(geometry, nbdev='/dev/nbd0'):
     print 'done!'
     return True
 
+def report_integrity():
+    '''
+    Steps through each xsysroot profile and displays information
+    for each backing and qcow image (storage used, broken links)
+    Returns False if any backing image cannot be found.
+    '''
+    xsys=XSysroot()
+    total_backing_size = total_qcow_size = 0
+    mib_units = (1024 * 1024)
+    broken_backings = 0
+
+    # load all profiles
+    filename=xsys._get_settings_filename()
+    if filename:
+        with open(filename, 'r') as f:
+            all_profiles=json.load(f)
+
+    print 'xsysroot image storage report\n'
+    for profile in all_profiles:
+
+        description = all_profiles[profile]['description']
+        backing = all_profiles[profile]['backing_image']
+        qcow = all_profiles[profile]['qcow_image']
+
+        # expand shell tokens in the image filenames
+        backing = os.popen('echo {}'.format(backing)).read().strip('\n')
+        qcow = os.popen('echo {}'.format(qcow)).read().strip('\n')
+
+        status_backing = 'NOT FOUND'
+        status_qcow    = 'UNRENEWED'
+        if os.path.isfile(backing):
+            bsize = os.path.getsize(backing) / mib_units
+            status_backing = '{} MiB'.format(bsize)
+            total_backing_size += bsize
+        else:
+            broken_backings += 1
+
+        if os.path.isfile(qcow):
+            qsize =os.path.getsize(qcow) / mib_units
+            status_qcow = '{} MiB'.format(qsize)
+            total_qcow_size += qsize
+
+        print '{} ({})\n backing image => {} => {}\n    qcow image => {} => {}'.format( \
+            profile, description, status_backing, backing, status_qcow, qcow)
+
+    print '\nBacking image storage: {} MiB'.format(total_backing_size)
+    print 'Qcow image storage: {} MiB'.format(total_qcow_size)
+    print 'Total disk space: {} MiB'.format(total_backing_size + total_qcow_size)
+    print 'Broken backing image links: {}'.format(broken_backings)
+
+    return (broken_backings == 0)
+
 def upgrade_xsysroot():
     '''
     Function to automatically upgrade your installed xsysroot binary.
@@ -1008,6 +1061,9 @@ if __name__ == '__main__':
     parser.add_option("-z", "--zerofree", dest="zerofree", action="store_true",
                       help='fill all partitions free space with zeroes to increase compression ratio"')
 
+    parser.add_option("-I", "--integrity", dest="integrity", action="store_true",
+                      help='A report of disk images used by xsysroot profiles')
+
     parser.add_option("-U", "--upgrade", dest="upgrade", action="store_true",
                       help='Upgrade to the latest version of xsysroot')
 
@@ -1041,6 +1097,8 @@ if __name__ == '__main__':
         if value:
             print value
             success=True
+    elif options.integrity:
+        success=report_integrity()
     elif options.running:
         success=xsys.running()
     elif options.ismounted:
