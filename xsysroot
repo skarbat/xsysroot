@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.905
+__version__ = 1.906
 
 import os
 import sys
@@ -439,6 +439,11 @@ class XSysroot():
         '''
         if self.is_mounted():
             print 'sysroot is mounted, please unmount first'
+            return False
+
+        # stop now if the backing image is not available
+        if not os.path.isfile('{backing_image}'.format(**self.settings)):
+            print 'Could not find backing image - aborting'
             return False
 
         if os.path.isfile('{qcow_image}'.format(**self.settings)):
