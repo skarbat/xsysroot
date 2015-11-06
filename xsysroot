@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.903
+__version__ = 1.904
 
 import os
 import sys
@@ -624,6 +624,32 @@ class XSysroot():
 
         return success
 
+    def jail(self):
+        '''
+        Protects harmful commands in the sysroot (reboot, shutdown)
+        and provides a blind sudo without password prompts.
+        You may find this option useful for testing software.
+        '''
+        if not self.is_mounted():
+            print 'sysroot not mounted - please mount first with -m'
+            return False
+
+        # disable reboot tools
+        self.execute('ln -sfv $(which true) $(which reboot)', pipes=True, verbose=False)
+        self.execute('ln -sfv $(which true) $(which poweroff)', pipes=True, verbose=False)
+        self.execute('ln -sfv $(which true) $(which shutdown)', pipes=True, verbose=False)
+        self.execute('ln -sfv $(which true) $(which halt)', pipes=True, verbose=False)
+ 
+        # blind sudo - make sure your user belongs to "sudo" group
+        self.edfile('/etc/sudoers', '%sudo   ALL=NOPASSWD: ALL', append=True)
+
+        # fake hostname to match the host system
+        import socket
+        host_hostname=socket.gethostname()
+        self.edfile('/etc/hosts', '127.0.0.1   {}'.format(host_hostname), append=True)
+
+        return True
+
     def chroot(self):
         '''
         Starts an interactive shell into the ARM sysroot as the superuser.
@@ -1037,6 +1063,9 @@ if __name__ == '__main__':
     parser.add_option("-u", "--umount", dest="umount", action="store_true",
                       help='unmount the current qcow image')
 
+    parser.add_option("-j", "--jail", dest="jail", action="store_true",
+                      help='Protect xsysroot against reboot harm on the host, give blind sudo')
+
     parser.add_option("-c", "--chroot", dest="chroot", action="store_true",
                       help='jumps you to an interactive ARM shell on the current sysroot as the superuser')
 
@@ -1112,6 +1141,8 @@ if __name__ == '__main__':
         success=xsys.mount()
     elif options.umount:
         success=xsys.umount()
+    elif options.jail:
+        success=xsys.jail()
     elif options.chroot:
         rc=xsys.chroot()
         sys.exit(rc)
