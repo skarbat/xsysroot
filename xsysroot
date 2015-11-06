@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.904
+__version__ = 1.905
 
 import os
 import sys
@@ -451,9 +451,18 @@ class XSysroot():
             print 'Backing image not found or unsupported format: {}'.format(self.settings['backing_image'])
             return False
 
-        print 'Creating qcow image {qcow_image} of dynamic size {qcow_size}'.format(**self.settings)
-        p=self._run_cmd('qemu-img create -f qcow2 -b ' \
-                            '{} {} {}'.format(uncompressed, self.settings['qcow_image'], self.settings['qcow_size']))
+        # Qcow image size can match the original backing image,
+        # or be forced to be larger which allows to expand the filesystem (--expand option)
+        # A smaller value will not work and the mount will likely fail to proceed.
+        qcow_size=''
+        try:
+            qcow_size=self.settings['qcow_size']
+            print 'Creating qcow image {qcow_image} of new forced size {qcow_size}'.format(**self.settings)
+        except:
+            print 'Creating qcow image {qcow_image} of original size'.format(**self.settings)
+
+        p=self._run_cmd('qemu-img create -f qcow2 -b {} {} {}'.format(
+                uncompressed, self.settings['qcow_image'], qcow_size))
 
         if self.mount():
             # Prepare image settings to chroot and access network
