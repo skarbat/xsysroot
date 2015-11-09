@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.906
+__version__ = 1.907
 
 import os
 import sys
@@ -214,17 +214,21 @@ class XSysroot():
         rc=os.system(command)
         return os.WEXITSTATUS(rc)
 
-    def _xrun_cmd(self, environment='LC_ALL=C', command='/bin/bash'):
+    def _xrun_cmd(self, environment='LC_ALL=C', command='/bin/bash', as_user=None):
         '''
         Runs a command inside the sysroot.
         If the sysroot has a virtual display attached to it,
         the DISPLAY environment variable will be pointing to it.
         '''
+        userspec=''
         display, _, _=self._get_virtual_display()
         if display:
             environment='"{}" "{}"'.format(environment, 'DISPLAY=:{}'.format(display))
 
-        cmdline='sudo {} chroot {} {}'.format(environment, self.settings['sysroot'], command)
+        if as_user:
+            userspec='-c "su - {}"'.format(as_user)
+
+        cmdline='sudo {} chroot {} {} {}'.format(environment, self.settings['sysroot'], command, userspec)
         return self._run_cmd(cmdline)
 
     def list_profiles(self):
@@ -664,7 +668,7 @@ class XSysroot():
 
         return True
 
-    def chroot(self):
+    def chroot(self, username=None):
         '''
         Starts an interactive shell into the ARM sysroot as the superuser.
         Returns chrooted command termination error level.
@@ -673,8 +677,13 @@ class XSysroot():
             print 'sysroot not mounted - please mount first with -m'
             return -1
         else:
-            print 'Starting sysroot shell into: {sysroot}'.format(**self.settings)
-            return self._xrun_cmd()
+            print 'Starting sysroot shell into: {sysroot}'.format(**self.settings),
+            if username:
+                print 'as user', username
+            else:
+                print 'as the superuser'
+
+            return self._xrun_cmd(as_user=username)
 
     def depends(self, repo_dir='.'):
         '''
@@ -1081,7 +1090,7 @@ if __name__ == '__main__':
                       help='Protect xsysroot against reboot harm on the host, give blind sudo')
 
     parser.add_option("-c", "--chroot", dest="chroot", action="store_true",
-                      help='jumps you to an interactive ARM shell on the current sysroot as the superuser')
+                      help='jumps into an interactive ARM shell as the superuser, or specify alternate username')
 
     parser.add_option("-x", "--execute", dest="execute", metavar="CMD",
                       help='executes a command in the sysroot, "@user command" to switch to account')
@@ -1158,7 +1167,10 @@ if __name__ == '__main__':
     elif options.jail:
         success=xsys.jail()
     elif options.chroot:
-        rc=xsys.chroot()
+        username=None
+        if args:
+            username=args[0]
+        rc=xsys.chroot(username=username)
         sys.exit(rc)
     elif options.execute:
 
