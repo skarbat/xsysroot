@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.907
+__version__ = 1.908
 
 import os
 import sys
@@ -737,31 +737,59 @@ class XSysroot():
             return True
 
 
+def is_os_platform_supported():
+    '''
+    Returns True if your local system processor and
+    operating system is supported by xsysroot.
+    '''
+    local_os = os.popen('uname -s').read().strip()
+    if not local_os == 'Linux':
+        return False
+
+    local_machine = os.popen('uname -m').read().strip()
+    if local_machine not in ('i686', 'armv7l', 'armv6', 'armv6l'):
+        return False
+
+    return True
+
 
 def check_system_tools():
     '''
     Checks wether you have the necessary tools to fully utilize xsysroot
     Returns True if you can rock & roll, False otherwise
     '''
-    ready=False
+    core_tools_ready = 0
+    min_core_tools = 3
+
+    if not is_os_platform_supported():
+        print 'Sorry, your local system is not supported,'
+        print 'Xsysroot runs on i386 and ARM based Linux systems.'
+        return False
 
     # check if the NBD kernel modules is loaded
     rc=os.system('lsmod | grep nbd > /dev/null 2>&1')
     if (rc):
-        print 'The NBD kernel module is not loaded - please fix /etc/modules'
+        print 'The NBD kernel module is not loaded'
+        print ' please add to /etc/modules: "nbd nbds_max=64 max_part=4"'
+    else:
+        core_tools_ready += 1
 
     # check for password-less sudo
     rc = os.system('sudo -n -k whoami > /dev/null 2>&1')
     if rc:
         print 'Error: You do not seem to have sudo password-less permissions, please run visudo to fix'
+    else:
+        core_tools_ready += 1
 
     # check for qemu tools
     rc = os.system('which qemu-arm-static qemu-img qemu-nbd  > /dev/null 2>&1')
     if rc:
         print 'Error: please install qemu-user-static and qemu-utils packages'
+    else:
+        core_tools_ready += 1
     
     # check for bin format support
-    rc = os.system('sudo which update-binfmts  > /dev/null 2>&1')
+    rc = os.system('sudo -n -k which update-binfmts  > /dev/null 2>&1')
     if rc:
         print 'Error: please install binfmt-support package'
 
@@ -791,13 +819,17 @@ def check_system_tools():
         print 'Warning: tool "import" not found, screenshots will not be available (you need ImageMagick)'
 
     # Parted tool to generate raw images
-    rc1 = os.system('sudo which parted > /dev/null 2>&1')
-    rc2 = os.system('sudo which resize2fs > /dev/null 2>&1')
-    rc3 = os.system('sudo which e2fsck > /dev/null 2>&1')
+    rc1 = os.system('sudo -n -k which parted > /dev/null 2>&1')
+    rc2 = os.system('sudo -n -k which resize2fs > /dev/null 2>&1')
+    rc3 = os.system('sudo -n -k which e2fsck > /dev/null 2>&1')
     if rc1 or rc2 or rc3:
         print 'Warning: tools "parted", "resize2fs" or "e2fsck" not found, --geometry option will not be available'
 
-    return True
+    # If minimal core tools are available, xsysroot is ready to work
+    if core_tools_ready >= min_core_tools:
+        return True
+
+    return False
 
 
 def create_debian_skeleton(prj_directory):
@@ -1196,7 +1228,7 @@ if __name__ == '__main__':
         success=xsys.zerofree()
     elif options.tools:
         if not check_system_tools():
-            print 'You seem to be missing basic tools to run xsysroot'
+            print 'xsysroot will not run.'
             sys.exit(1)
         else:
             print 'Core system tools seem to be ready, xsysroot should work fine'
