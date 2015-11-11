@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.908
+__version__ = 1.909
 
 import os
 import sys
@@ -111,6 +111,29 @@ class XSysroot():
         '''
         with open(self.last_profile_cache, 'w') as f:
             f.write('last_profile: {}\n'.format(profilename))
+
+    def _get_add_mounts(self):
+        '''
+        Returns a list of dictionaries of additional mount points.
+        These optional mounts can be specified using the "add_mounts" key in the
+        configuration file, for example:
+
+          "add_mounts" : "p3:/tmp/third p4:/tmp/fourth"
+
+        Each dictionary comes in the form: { 'device': '/dev/nbdXpY', 'mount': '/wherever' }
+        If no additional mounts are specified, an empty list is returned.
+        '''
+        additional_mounts=[]
+
+        if self.settings.has_key('add_mounts'):
+            extra_mounts = self.settings['add_mounts'].split(' ')
+            for new_mount in extra_mounts:
+                new_device, new_mountpoint = new_mount.split(':')
+                additional_mounts.append(
+                    { 'device' : '{}{}'.format(self.settings['nbdev'], new_device),
+                      'mount'  : '{}'.format(new_mountpoint) })
+
+        return additional_mounts
 
     def _get_virtual_display(self):
         '''
@@ -362,6 +385,15 @@ class XSysroot():
                     # Create a bind mount so the boot partition is accesible from the root
                     self._run_cmd('sudo mount --bind {sysboot} {sysroot}/boot'.format(**self.settings))
 
+            # mount additional partitions if specified
+            add_mounts = self._get_add_mounts()
+            if len(add_mounts):
+                print 'mounting additional partitions'
+                for extra_mount in add_mounts:
+                    rc=self._run_cmd('mkdir {mount} ; sudo mount {device} {mount}'.format(**extra_mount))
+                    print 'mounted {} => {} rc={}'.format(
+                        extra_mount['device'], extra_mount['mount'], rc)
+
             mounted=self.is_mounted()
             print 'Mount done'
 
@@ -422,10 +454,15 @@ class XSysroot():
                 p=self._run_cmd('rmdir {sysboot}'.format(**self.settings))
                 p=self._run_cmd('sudo umount {sysroot}/boot'.format(**self.settings))
 
-            p=self._run_cmd('sudo umount {sysroot}'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot} ; rmdir {sysroot}'.format(**self.settings))
+
+            # unmount any additional partitions specified
+            add_mounts = self._get_add_mounts()
+            if len(add_mounts):
+                for extra_mount in add_mounts:
+                    rc=self._run_cmd('sudo umount {mount} ; rmdir {mount}'.format(**extra_mount))
 
             p=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
-            p=self._run_cmd('rmdir {tmp} {sysroot}'.format(**self.settings))
             mounted=self.is_mounted()
 
         # Stop the virtual display
