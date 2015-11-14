@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.911
+__version__ = 1.912
 
 import os
 import sys
@@ -784,7 +784,7 @@ def is_os_platform_supported():
         return False
 
     local_machine = os.popen('uname -m').read().strip()
-    if local_machine not in ('i686', 'armv7l', 'armv6', 'armv6l'):
+    if local_machine not in ('i686', 'armv7l', 'armv6', 'armv6l', 'x86_64'):
         return False
 
     return True
