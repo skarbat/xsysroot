@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.912
+__version__ = 1.913
 
 import os
 import sys
@@ -1057,9 +1057,11 @@ def upgrade_xsysroot():
     '''
     Function to automatically upgrade your installed xsysroot binary.
     Contacts github to fetch the latest version and replaces itself.
+    Additionally, a symlink will be created to import xsysroot from Python.
     You most likely need root permissions if installed in a system directory.
     '''
 
+    success=False
     xsysroot_github_url='raw.githubusercontent.com'
     xsysroot_file_url='/skarbat/xsysroot/master/xsysroot'
 
@@ -1094,19 +1096,33 @@ def upgrade_xsysroot():
                 print 'Upgraded your {} version from {} to {}'.format(
                     local_xsysroot_filename, __version__, version_at_github)
 
-                return True
+                success=True
 
             elif version_at_github < float(__version__):
                 print 'Your local version ({}) is higher than that on github ({}), did you fork it?'.format(
                     __version__, version_at_github)
             else:
                 print 'xsysroot is already the latest version: {}'.format(version_at_github)
+                success=True
 
     else:
         print 'Could not fetch xsysroot: {}{} - {} {}'.format(
             xsysroot_github_url, xsysroot_file_url, response.status, response.reason)
 
-    return False
+    # Pythonize xsysroot (harmless if we can't do it)
+    try:
+        import xsysroot
+    except ImportError:
+        try:
+            # Find the first path to Python system modules
+            syspath=next(i for i in sys.path if i.find('python') != -1)
+            print 'Creating python symlink to xsysroot at:', syspath
+            os.system('ln -s $(which xsysroot) {}'.format(
+                os.path.join(syspath, 'xsysroot.py')))
+        except:
+            print 'Could not create python symlink to xsysroot'
+
+    return success
 
 
 
