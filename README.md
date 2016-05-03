@@ -1,5 +1,7 @@
 ##Xsysroot
 
+[![Join the chat at https://gitter.im/skarbat/xsysroot](https://badges.gitter.im/skarbat/xsysroot.svg)](https://gitter.im/skarbat/xsysroot?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 Xsysroot is a tool that allows you to work with ARM images from your Intel computer.
 
 It is specially useful to customize operating systems for micro computer boards
