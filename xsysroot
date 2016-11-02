@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.913
+__version__ = 1.914
 
 import os
 import sys
@@ -70,7 +70,7 @@ class XSysroot():
 
         # In order to allow your sysroot access to private network data
         # a custom DNS setting is specified here.
-        self.dns_server='109.69.8.34'
+        self.dns_server='8.8.8.8'
 
         # choose a settings profile, or set to last used
         if not profile:
