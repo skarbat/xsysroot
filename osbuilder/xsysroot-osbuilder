@@ -1,0 +1,160 @@
+#!/usr/bin/env python
+#
+#  xsysroot-osbuilder
+#
+#  Automated OS image builder
+#
+#  The MIT License (MIT)
+#
+#  Copyright (c) 2015-2017 Albert Casals - albert@mitako.eu
+#
+#  Permission is hereby granted, free of charge, to any person obtaining a copy
+#  of this software and associated documentation files (the "Software"), to deal
+#  in the Software without restriction, including without limitation the rights
+#  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+#  copies of the Software, and to permit persons to whom the Software is
+#  furnished to do so, subject to the following conditions:
+#
+#  The above copyright notice and this permission notice shall be included in
+#  all copies or substantial portions of the Software.
+#
+#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+#  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+#  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+#  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+#  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+#  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+#  THE SOFTWARE.
+
+import os
+import sys
+import json
+import time
+import pprint
+import xsysroot
+
+
+class Stage():
+    def __init__(self, name, steps, xbuilder, dry_run=True, verbose=False, delay=0):
+        self.name=name
+        self.steps=steps
+        self.xbuilder=xbuilder
+        self.dry_run=dry_run
+        self.verbose=verbose
+
+        if delay:
+            time.sleep(delay)
+
+        # Explain what we have been told to do
+        if self.verbose:
+            print '\nStage: {}'.format(self.name)
+            pprint.pprint(self.steps)
+        
+    def exec_host(self, command, pipes=False):
+        if self.dry_run:
+            print 'EXEC HOST >>>', command
+            return True
+        else:
+            return os.WEXITSTATUS(os.system(command))
+
+    def exe_guest(self, command, pipes=False):
+        if self.dry_run:
+            print 'EXEC GUEST >>>', command
+            return True
+        else:
+            return self.xbuilder.execute(command, pipes=pipes)
+        
+    def do_steps(self):
+        pass
+    
+class StageImage(Stage):
+    def do_steps(self):
+        geometry='{} {}'.format(self.steps['image_filename'], self.steps['geometry'])
+        if os.path.isfile(self.steps['image_filename']):
+            if self.steps['override'] and not self.dry_run:
+                os.unlink(self.steps['image_filename'])
+            else:
+                print 'ERROR: image_filename is on the way: ', self.steps['image_filename']
+                return False
+
+        if not self.dry_run:
+            return self.xbuilder.create_geometry(geomtry)
+
+        return True
+        
+class StageBootstrap(Stage):
+    def do_steps(self):
+        if self.steps['extra_packages'].find(' ') != -1:
+            print 'WARNING: extra_packages cannot contain spaces, use commas instead'
+            return False
+
+        return True
+
+class StageRepositories(Stage):
+    def do_steps(self):
+        return True
+
+class StageSoftware(Stage):
+    def do_steps(self):
+        return True
+
+class StageAccounts(Stage):
+    def do_steps(self):
+        return True
+
+class StageCustomize(Stage):
+    def do_steps(self):
+        return True
+
+class StagePack(Stage):
+    def do_steps(self):
+        return True
+
+
+if __name__ == '__main__':
+
+    dry_run=True
+    verbose=True
+    delay_secs=0
+
+    print 'xsysroot-osbuilder version {}\n'.format(xsysroot.__version__)
+    try:
+        json_filename=sys.argv[1]
+        osconfig=json.loads(open(json_filename, 'r').read())
+    except:
+        raise
+
+    if len(sys.argv) > 2 and sys.argv[2] == '--run-for-real':
+        print 'WARNING: Running for real'
+        for_real=True
+
+    xbuilder=xsysroot.XSysroot(profile=osconfig['xsysroot-profile'])
+    if verbose:
+        print 'Xsysroot profile: {}'.format(osconfig['xsysroot-profile'])
+        xbuilder.print_settings()
+        print
+    
+    stages = [
+        { 'name': 'stage_image', 'class': StageImage },
+        { 'name': 'stage_bootstrap', 'class': StageBootstrap },
+        { 'name': 'stage_repositories', 'class': StageRepositories },
+        { 'name': 'stage_software', 'class': StageSoftware },
+        { 'name': 'stage_accounts', 'class': StageAccounts },
+        { 'name': 'stage_pack', 'class': StagePack }
+    ]
+
+    time_start=time.time()
+    print '>>> Start at {}'.format(time.ctime(time_start))
+
+    for stage in stages:
+        stage_work = stage['class'](stage['name'],
+                                    osconfig[stage['name']],
+                                    xbuilder, dry_run=dry_run, verbose=verbose, delay=delay_secs)
+        if not stage_work.do_steps():
+            print '>>> {} failed - aborting'.format(stage['name'])
+            sys.exit(1)
+
+    time_end=time.time()
+    print 'Stages Done at {}'.format(time.ctime(time_end))
+    print 'Elapsed {}secs'.format((time_end - time_start))
+    sys.exit(0)

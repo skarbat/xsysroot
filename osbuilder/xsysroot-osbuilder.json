@@ -1,0 +1,71 @@
+{
+    "osname": "pipaos",
+    "osversion": "5.0",
+    "oscodename": "marvel",
+    "xsysroot-profile": "pipaos-build",
+    "hostname": "pipatest",
+
+    "stage_image": {
+        "override": true,
+        "geometry": "fat32:120 ext4:800",
+        "image_filename": "pipaos-test.img"
+    },
+
+    "stage_bootstrap": {
+        "repo_url": "http://mirror.us.leaseweb.net/raspbian/raspbian/",
+        "arch": "armhf",
+        "suite": "jessie",
+        "extra_packages": "less, sudo,nano,ssh,htop,iptraf,locales,binutils,apt-utils,psmisc,module-init-tools,ifplugd,debconf-utils,bash-completion,ifupdown,ca-certificates,curl,tcpdump,parted,file,time,fake-hwclock,ntp,isc-dhcp-client,dhcpcd5,usbutils,wpasupplicant,iputils-ping,net-tools,wireless-tools,ifplugd,hostapd,dnsmasq,iw,console-data,kbd,console-setup"        
+    },
+
+    "stage_repositories": {
+        "apt_directory": "/etc/apt",
+        "repositories": [
+            {
+                "name": "raspbian",
+                "file": "sources.list",
+                "pointer": "deb http://archive.raspbian.org/raspbian jessie main contrib non-free",
+                "key": "https://archive.raspbian.org/raspbian.public.key"
+            }
+        ]
+    },
+
+    "stage_software": {
+        "install_command": "DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y",
+        "packages": {
+            "user": "screen mc crda raspi-config",
+            "pipaos": "pipaos-tools",
+            "additional": "python"
+        },
+
+        "custom_commands": {
+            "copies_and_fills": [
+                "apt-get install -y raspi-copies-and-fills", "sudo mv /etc/ld.so.preload /etc/ld.so.preload-disabled"
+            ],
+            "rpi-update": [
+                "curl -L --output /usr/bin/rpi-update https://raw.githubusercontent.com/Hexxeh/rpi-update/master/rpi-update",
+                "chmod +x /usr/bin/rpi-update"
+            ]
+        }
+    },
+    
+    "stage_accounts": {
+        "add_groups": "gpio i2c spi",
+        "root_password": "thor",
+        "regular_user": "albert",
+        "regular_user_password": "casals",
+        "regular_user_groups": "tty,adm,dialout,cdrom,sudo,audio,video,plugdev,games,users,input,netdev,gpio,i2c,spi"
+    },
+
+    "stage_customize": {
+        "customize_directory": "root_customize"
+    },
+
+    "stage_pack": {
+        "zerofree": true,
+        "raw_image": "pipaos-test.img",
+        "custom_commands": [
+            "apt-get -y clean", "apt-get -y autoclean"
+        ]
+    }
+}
