@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.914
+__version__ = 1.915
 
 import os
 import sys
@@ -760,9 +760,6 @@ class XSysroot():
         if not os.path.exists(debian_dir):
             print 'cannot find debian package directory at: {}'.format(debian_dir)
             return False
-
-        # Resolve build dependencies
-        self.depends(repo_dir=repo_dir)
 
         print 'building package for repo', repo_dir
         rc=os.system('cd {} && {}'.format(repo_dir, debuild_cmd))
