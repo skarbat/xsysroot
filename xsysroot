@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.915
+__version__ = 1.916
 
 import os
 import sys
@@ -223,7 +223,7 @@ class XSysroot():
 
         # Copy ARM emulator, setup a default DNS, and remove libcofi.so preload
         print 'Preparing sysroot for chroot to function correctly'
-        self._run_cmd('sudo cp $(which qemu-arm-static) ' \
+        self._run_cmd('sudo cp -fv $(which qemu-arm-static) ' \
                           '{sysroot}/usr/bin'.format(**self.settings))
 
         self.edfile('/etc/resolv.conf', 'nameserver {}'.format(self.dns_server), verbose=False)
@@ -441,7 +441,7 @@ class XSysroot():
                 self._run_cmd('sudo mv -fv {}/{} {}/{}'.format(
                         self.query('sysroot'), self.ld_so_preload_backup,
                         self.query('sysroot'), self.ld_so_preload))
-            
+
             print 'unbinding {qcow_image}'.format(**self.settings)
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
@@ -618,6 +618,38 @@ class XSysroot():
             success = (rc_connect==0)
 
         return success
+
+
+    def release(self, partition='all', verbose=True):
+        '''
+        Prepares the image for release and produces a zipped file from it for distribution
+        '''
+        success=False
+        self.mount()
+        if not self.is_mounted():
+            print 'Could not mount image for release preparation'
+            return False
+
+        # Remove xsysroot related stuff from the image
+        print 'Preparing image for release...'
+        self.edfile('/etc/resolv.conf', '', append=False)
+        self._run_cmd('sudo rm -fv {sysroot}/usr/bin/qemu-arm-static'.format(**self.settings))
+        self.umount()
+        self.zerofree()
+
+        # Create a tar.gz file of the image on the current directory
+        release_image='{}.img'.format(self.profile)
+        convertcmd='qemu-img convert {} {}'.format(self.query('qcow_image'), release_image)
+        print 'Extracting raw image from: {}...'.format(self.query('qcow_image'))
+        self._run_cmd(convertcmd)
+        print 'Compressing {}...'.format(release_image)
+        rc=self._run_cmd('gzip --verbose {}'.format(release_image))
+
+        # prepare the image to work again on xsysroot
+        self.mount()
+        self._prepare_sysroot()
+        print 'Release Done!'
+        return True
 
     def execute(self, command, verbose=True, pipes=False, as_user=None):
         '''
@@ -1195,6 +1227,9 @@ if __name__ == '__main__':
     parser.add_option("-z", "--zerofree", dest="zerofree", action="store_true",
                       help='fill all partitions free space with zeroes to increase compression ratio"')
 
+    parser.add_option("-R", "--release", dest="release", action="store_true",
+                      help='Release a zero freed image into a compressed file for deployment')
+
     parser.add_option("-I", "--integrity", dest="integrity", action="store_true",
                       help='A report of disk images used by xsysroot profiles')
 
@@ -1276,6 +1311,8 @@ if __name__ == '__main__':
         success=create_image(options.image)
     elif options.zerofree:
         success=xsys.zerofree()
+    elif options.release:
+        success=xsys.release()
     elif options.tools:
         if not check_system_tools():
             print 'xsysroot will not run.'
