@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.918
+__version__ = 1.919
 
 import os
 import sys
@@ -620,9 +620,10 @@ class XSysroot():
         return success
 
 
-    def release(self, partition='all', verbose=True):
+    def release(self, partition='all', developer=True, verbose=True):
         '''
-        Prepares the image for release and produces a zipped file from it for distribution
+        Prepares the image for release and produces a zipped file from it for distribution.
+        If developer is set to False, the emulator and DNS settings will be removed.
         '''
         success=False
         self.mount()
@@ -632,25 +633,35 @@ class XSysroot():
 
         # Remove xsysroot related stuff from the image
         print 'Preparing image for release...'
-        self.edfile('/etc/resolv.conf', '', append=False)
-        self._run_cmd('sudo rm -fv {sysroot}/usr/bin/qemu-arm-static'.format(**self.settings))
-        self.umount()
-        self.zerofree()
+        if not developer:
+            print 'Removing non-developer settings'
+            self.edfile('/etc/resolv.conf', '', append=False)
+            self._run_cmd('sudo rm -fv {sysroot}/usr/bin/qemu-arm-static'.format(**self.settings))
+
+        if not self.umount() or not self.zerofree():
+            print 'Could not prepare image for release'
+            return False
 
         # Create a tar.gz file of the image on the current directory
         release_image='{}.img'.format(self.profile)
         convertcmd='qemu-img convert {} {}'.format(self.query('qcow_image'), release_image)
         print 'Extracting raw image from: {}...'.format(self.query('qcow_image'))
-        self._run_cmd(convertcmd)
+        if self._run_cmd(convertcmd) != 0:
+            print 'Conversion failed'
+            return False
+
+        # md5 failure should not cancel the release
         self._run_cmd('md5sum -b {}'.format(release_image))
 
         print 'Compressing {}...'.format(release_image)
         rc=self._run_cmd('gzip --verbose --force {}'.format(release_image))
+        if rc != 0:
+            print 'Could not compress image'
+            return False
+
+        # md5 failure should not cancel the release
         self._run_cmd('md5sum -b {}.gz'.format(release_image))
 
-        # prepare the image to work again on xsysroot
-        self.mount()
-        self._prepare_sysroot()
         print 'Release Done!'
         return True
 
@@ -1231,7 +1242,7 @@ if __name__ == '__main__':
                       help='fill all partitions free space with zeroes to increase compression ratio"')
 
     parser.add_option("-R", "--release", dest="release", action="store_true",
-                      help='Release a zero freed image into a compressed file for deployment')
+                      help='Release a zero freed, compressed image for deployment with qemu emulator bundled')
 
     parser.add_option("-I", "--integrity", dest="integrity", action="store_true",
                       help='A report of disk images used by xsysroot profiles')
