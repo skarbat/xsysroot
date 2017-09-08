@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.920
+__version__ = 1.93
 
 import os
 import sys
@@ -598,8 +598,8 @@ class XSysroot():
         if self.is_mounted():
             print 'sysroot is mounted - aborting'
         elif partition=='all':
-            rc=self.zerofree(self.query('nbdev_part'))
-            success = (rc==0)
+            # note a recursive call
+            success=self.zerofree(self.query('nbdev_part'))
         elif not re.match('(p\d+)$', partition):
             print 'Partition name not recognized, must be p1, p2, .. {}'.format(partition)
         else:
@@ -607,6 +607,7 @@ class XSysroot():
             rc_connect=self._run_cmd('sudo qemu-nbd -c {nbdev} {qcow_image}; sync'.format(**self.settings))
             if rc_connect:
                 print 'error connecting image'
+                success=False
             else:
                 zero_device='{}{}'.format(self.query('nbdev'), partition)
                 print 'zero free', zero_device
@@ -617,7 +618,7 @@ class XSysroot():
 
             print 'disconnecting image'
             rc_disconnect=self._run_cmd('sudo qemu-nbd -d {nbdev}; sync'.format(**self.settings))
-            success = (rc_connect==0)
+            success = (rc==0 and rc_disconnect==0)
 
         return success
 
@@ -641,7 +642,7 @@ class XSysroot():
             self._run_cmd('sudo rm -fv {sysroot}/usr/bin/qemu-arm-static'.format(**self.settings))
 
         if not self.umount() or not self.zerofree():
-            print 'Could not prepare image for release'
+            print 'Error binding or zeroing the image'
             return False
 
         # Create a tar.gz file of the image on the current directory
