@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.919
+__version__ = 1.920
 
 import os
 import sys
@@ -444,6 +444,8 @@ class XSysroot():
 
             print 'unbinding {qcow_image}'.format(**self.settings)
             p=self._run_cmd('sudo umount {sysroot}/tmp'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}/sys/fs/cgroup/systemd'.format(**self.settings))
+            p=self._run_cmd('sudo umount {sysroot}/sys/fs/cgroup'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/sys'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/proc'.format(**self.settings))
             p=self._run_cmd('sudo umount {sysroot}/dev'.format(**self.settings))
