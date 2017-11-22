@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.93
+__version__ = 1.94
 
 import os
 import sys
@@ -1038,10 +1038,14 @@ def create_image(geometry, nbdev='/dev/nbd0'):
     rc=safe_exec('sudo qemu-nbd -d {}'.format(nbdev))
     rc=safe_exec('sudo qemu-nbd -c {} {}'.format(nbdev, filename))
     for part in partitions:
-        if part['partype'].startswith('fat'):
+        if part['partype'].startswith('fat16'):
             rc=safe_exec('sudo mkfs.vfat -n "xsysroot" -v -F 16 {}p{}'.format(nbdev, part['partnum'] + 1))
+        elif part['partype'].startswith('fat32'):
+            rc=safe_exec('sudo mkfs.vfat -n "xsysroot" -v -F 32 {}p{}'.format(nbdev, part['partnum'] + 1))
         elif part['partype'].startswith('ext'):
             rc=safe_exec('sudo mkfs.{} -q -O ^huge_file {}p{}'.format(part['partype'], nbdev, part['partnum'] + 1))
+        else:
+            raise IOError('partition {} specifies unknown filesystem: {}'.format(part['partnum'], part['partype']))
 
     rc=safe_exec('sudo qemu-nbd -d {}'.format(nbdev))
     print 'done!'
