@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.94
+__version__ = 1.95
 
 import os
 import sys
@@ -623,10 +623,11 @@ class XSysroot():
         return success
 
 
-    def release(self, partition='all', developer=True, verbose=True):
+    def release(self, partition='all', developer=True, verbose=True, filename=None):
         '''
         Prepares the image for release and produces a zipped file from it for distribution.
         If developer is set to False, the emulator and DNS settings will be removed.
+        By default the profile name will be used as the ouput image, unless filename is provided.
         '''
         success=False
         self.mount()
@@ -646,7 +647,7 @@ class XSysroot():
             return False
 
         # Create a tar.gz file of the image on the current directory
-        release_image='{}.img'.format(self.profile)
+        release_image='{}.img'.format(filename if filename else self.profile)
         convertcmd='qemu-img convert {} {}'.format(self.query('qcow_image'), release_image)
         print 'Extracting raw image from: {}...'.format(self.query('qcow_image'))
         if self._run_cmd(convertcmd) != 0:
