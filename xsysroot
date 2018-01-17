@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.95
+__version__ = 1.96
 
 import os
 import sys
@@ -669,6 +669,7 @@ class XSysroot():
         print 'Release Done!'
         return True
 
+
     def execute(self, command, verbose=True, pipes=False, as_user=None):
         '''
         Executes a command inside the sysroot.
@@ -694,6 +695,41 @@ class XSysroot():
                 print 'sysroot executing: {}'.format(command)
 
             return self._xrun_cmd(command=command)
+
+
+    def download(self):
+        '''
+        Downloads the image refered to in the profile with the "url" key.
+        The image is placed in the same file refered by the "backing_image",
+        if the file is compressed with gzip it is also uncompressed.
+
+        Shell expansion keys are also possible, and access credentials can be set
+        by using a .curlrc file on your home directory.
+        '''
+        try:
+            url=self.query('url')
+            url=os.popen('echo "{}"'.format(url)).read().strip()
+            target=format(self.settings['backing_image'])
+            print 'Image URL: {}'.format(url)
+            print 'Target file : {}'.format(target)
+        except:
+            print 'Profile {} url not found or unsupported extension'.format(self.profile)
+            return False
+
+        # Make sure the profile is not mounted
+        if self.is_mounted():
+            print 'Image is mounted - please unmount to download url'
+            return False
+
+        # Download and extract if neccessary
+        print 'Downloading...'
+        cmd_curl='curl -L -s {} | '.format(url)
+        if url.endswith('gz'):
+            cmd_curl += 'gunzip -c > {}'.format(self.query('backing_image'))
+
+        rc=os.system(cmd_curl)
+        return (rc==0)
+
 
     def edfile(self, filename, literal, append=False, verbose=True):
         '''
@@ -1231,6 +1267,9 @@ if __name__ == '__main__':
     parser.add_option("-x", "--execute", dest="execute", metavar="CMD",
                       help='executes a command in the sysroot, "@user command" to switch to account')
 
+    parser.add_option("-w", "--download", dest="download", action="store_true",
+                      help='downloads the image refered to in the url on the image profile')
+
     parser.add_option("-o", "--screenshot", dest="screenshot", metavar="IMAGE_FILE",
                       help='take a screenshot of the virtual display (extension determines format)')
 
@@ -1312,7 +1351,6 @@ if __name__ == '__main__':
         rc=xsys.chroot(username=username)
         sys.exit(rc)
     elif options.execute:
-
         command=options.execute
         username=None
         if command[0] == '@':
@@ -1321,6 +1359,8 @@ if __name__ == '__main__':
 
         rc=xsys.execute(command, as_user=username)
         sys.exit(rc)
+    elif options.download:
+        success=xsys.download()
     elif options.screenshot:
         success=xsys.screenshot(options.screenshot)
     elif options.depends:
