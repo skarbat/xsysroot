@@ -1,4 +1,4 @@
-##Xsysroot
+## Xsysroot
 
 [![Join the chat at https://gitter.im/skarbat/xsysroot](https://badges.gitter.im/skarbat/xsysroot.svg)](https://gitter.im/skarbat/xsysroot?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
@@ -14,4 +14,4 @@ There is also a [pdf version](http://xsysroot.mitako.eu/xsysroot.pdf) for downlo
 
 Xsysroot is free software.
 
-(c) Albert Casals, 2015-2016.
+(c) Albert Casals, 2015-2018.
