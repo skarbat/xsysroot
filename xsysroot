@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.96
+__version__ = 1.97
 
 import os
 import sys
@@ -700,11 +700,12 @@ class XSysroot():
     def download(self):
         '''
         Downloads the image refered to in the profile with the "url" key.
-        The image is placed in the same file refered by the "backing_image",
-        if the file is compressed with gzip it is also uncompressed.
+        The image is uncompressed on the fly and placed in the same file
+        refered by the "backing_image".
 
+        url must point to a compressed gzip file for this to work. Image must be unmounted.
         Shell expansion keys are also possible, and access credentials can be set
-        by using a .curlrc file on your home directory.
+        by using a .curlrc file on your home directory. This allows for automating this command.
         '''
         try:
             url=self.query('url')
@@ -722,12 +723,16 @@ class XSysroot():
             return False
 
         # Download and extract if neccessary
-        print 'Downloading...'
-        cmd_curl='curl -L -s {} | '.format(url)
-        if url.endswith('gz'):
-            cmd_curl += 'gunzip -c > {}'.format(self.query('backing_image'))
+        print 'Cheking downlooad url is okay...'
+        cmd_check='curl -L --fail -s {} | head -c 512 | file -b -i - | grep "application/gzip"'.format(url)
+        rc=os.system(cmd_check)
+        if rc:
+            print 'url not found or not a gzip file: {}'.format(url)
+        else:
+            print 'Downloading {}'.format(url)
+            cmd_curl='curl -L --fail -s {} | zcat > {}'.format(url, self.query('backing_image'))
+            rc=os.system(cmd_curl)
 
-        rc=os.system(cmd_curl)
         return (rc==0)
 
 
