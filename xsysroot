@@ -26,7 +26,7 @@
 #  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 #  THE SOFTWARE.
 
-__version__ = 1.98
+__version__ = 1.99
 
 import os
 import sys
@@ -724,13 +724,13 @@ class XSysroot():
 
         # Download and extract if neccessary
         print 'Cheking downlooad url is okay...'
-        cmd_check='curl -L --fail -s {} | head -c 512 | file -b -i - | grep "application/gzip"'.format(url)
+        cmd_check='curl --netrc -L --fail -s {} | head -c 512 | file -b -i - | grep "application/gzip"'.format(url)
         rc=os.system(cmd_check)
         if rc:
             print 'url not found or not a gzip file: {}'.format(url)
         else:
             print 'Downloading {}'.format(url)
-            cmd_curl='curl -L --fail -s {} | zcat > {}'.format(url, self.query('backing_image'))
+            cmd_curl='curl --netrc -L --fail -s {} | zcat > {}'.format(url, self.query('backing_image'))
             rc=os.system(cmd_curl)
 
         return (rc==0)
