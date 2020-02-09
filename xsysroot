@@ -1078,7 +1078,7 @@ def create_image(geometry, nbdev='/dev/nbd0'):
     print 'formatting partitions...',
     sys.stdout.flush()
     rc=safe_exec('sudo qemu-nbd -d {}'.format(nbdev))
-    rc=safe_exec('sudo qemu-nbd -c {} {}'.format(nbdev, filename))
+    rc=safe_exec('sudo qemu-nbd --format=raw -c {} {}'.format(nbdev, filename))
     for part in partitions:
         if part['partype'].startswith('fat16'):
             rc=safe_exec('sudo mkfs.vfat -n "xsysroot" -v -F 16 {}p{}'.format(nbdev, part['partnum'] + 1))
